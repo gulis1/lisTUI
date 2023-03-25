@@ -5,6 +5,7 @@
 - [ ] Delete playlists. 
 - [ ] Fetch playlists from main menu.
 - [ ] Make invidious instances configurable by the user.
+- [ ] Make accent color configurable.
 
 ## COMPLETED
 - [✔] Search.  

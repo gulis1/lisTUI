@@ -2,6 +2,11 @@
 name = "listui_lib"
 version = "0.1.0"
 edition = "2021"
+description = "Library with various utilities used by the lisTUI music player."
+license = "GPL-3.0"
+authors = ["gulis1"]
+repository = "https://github.com/gulis1/lisTUI"
+readme = "README.md"
 
 
 [dependencies]

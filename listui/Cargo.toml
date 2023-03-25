@@ -2,7 +2,11 @@
 name = "listui"
 version = "0.1.0"
 edition = "2021"
-
+description = "A simple music player for the terminal, written in Rust. "
+license = "GPL-3.0"
+authors = ["gulis1"]
+repository = "https://github.com/gulis1/lisTUI"
+readme = "README.md"
 
 [dependencies]
 listui_lib = { path = "../listui_lib" }

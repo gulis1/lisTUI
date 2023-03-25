@@ -27,9 +27,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data_dir = dirs::data_dir().expect("Failed to create data directory.");
     data_dir.push("listui");
     create_dir_all(data_dir.clone()).expect("Failed to create data directory.");
+
+    let config_dir = dirs::config_dir();
+    if let Some(mut config_dir) = config_dir {
+        // Parse .env file. If it fails, default values will be used instead.
+        config_dir.push("listui/listui.config");
+        let _ = dotenvy::from_path(config_dir);
+    }
     
-    // Parse .env file. If it fails, default values will be used instead.
-    let _ = dotenvy::from_path(format!("{}/.env", data_dir.as_os_str().to_string_lossy()));
+
     let database_path  =  (|| Some(PathBuf::from(env::var("DATABASE_PATH").ok()?)))()
         .unwrap_or_else(|| {
             data_dir.push("db.sqlite");
