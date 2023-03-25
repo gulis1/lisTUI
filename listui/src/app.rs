@@ -1,4 +1,4 @@
-use listui_lib::db::Dao;
+use listui_lib::db::{Dao, DbError};
 
 use listui_lib::models::{Playlist, Track};
 use listui_lib::player::Player;
@@ -48,7 +48,7 @@ pub struct ListuiApp {
     songs_widget: ListWidget<Track>,
     
     player: Player,
-    dao: Dao,
+    dao: Option<Dao>,
     downloader: Downloader,
 
     playlist_dir: PathBuf,
@@ -76,7 +76,7 @@ impl ListuiApp {
             songs_widget: ListWidget::empty(),
             
             player: Player::default(),
-            dao,
+            dao: Some(dao),
             downloader: Downloader::new(3), // TODO: make max_downloads configurable.
 
             playlist_dir,
@@ -95,25 +95,26 @@ impl ListuiApp {
 
         let mut app = ListuiApp::new(playlist_dir, database_path)?;
 
-        app.load_songs(playlist_id);
+        app.load_songs(playlist_id)?;
         app.current_screen = CurrentScreen::Songs;
 
         Ok(app)
     }
 
-    pub fn with_items(tracks: Vec<Track>, database_path: PathBuf, playlist_dir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn with_tracks(playlist_dir: PathBuf, tracks: Vec<Track>) -> Result<Self, Box<dyn std::error::Error>> {
 
-        let playlist_name = playlist_dir.file_name().unwrap().to_string_lossy().to_string();
-        let dao = Dao::new(&database_path)?;
+        let playlist_name = (|| {
+            Some(playlist_dir.file_name()?.to_string_lossy().to_string())
+        })().unwrap_or(String::from("Unknown playlist."));
 
         Ok(Self {
            
-            current_screen: CurrentScreen::Playlists,
-            playlists_widget: ListWidget::with_items(dao.get_playlists()?),
+            current_screen: CurrentScreen::Songs,
+            playlists_widget: ListWidget::empty(),
             songs_widget: ListWidget::with_items(tracks),
             
             player: Player::default(),
-            dao,
+            dao: None,
             downloader: Downloader::new(3), // TODO: make max_downloads configurable.
 
             playlist_dir,
@@ -178,9 +179,10 @@ impl ListuiApp {
             match self.downloader.check_for_completed_download() {
                 Some(DownloadResult::Completed(id, path)) => {
                     // The download that just finished is the one we were waiting for.
-                    if let Some(ref song) = self.current_song {
-                        if &id == song.yt_id.as_ref().unwrap() { 
-                            self.player.play_file(&path).unwrap(); 
+                    let yt_id = self.current_song.as_ref().and_then(|song| song.yt_id.as_ref());
+                    if let Some(yt_id) = yt_id {
+                        if &id == yt_id{ 
+                            let _ = self.player.play_file(&path); 
                             self.downloading = false;
                         }
                     }
@@ -191,16 +193,18 @@ impl ListuiApp {
         }   
     }
     
-    fn load_songs(&mut self, playlist_id: i32) {
+    fn load_songs(&mut self, playlist_id: i32) -> Result<(), DbError> {
+        
         // Loads from the DB all tracks of the playlist with the given id.
-     
-        let playlist = self.dao.get_playlist(playlist_id).expect("Failed to load playlist");
-        let songs = self.dao.get_tracks(playlist_id).expect("Failed to load songs");
-
-        self.current_playlist = Some(playlist.title);
-        self.songs_widget = ListWidget::with_items(songs);
-
-        self.current_screen = CurrentScreen::Songs;
+        if let Some(ref dao) = self.dao {
+            let playlist = dao.get_playlist(playlist_id)?;
+            let songs = dao.get_tracks(playlist_id)?;
+            self.current_playlist = Some(playlist.title);
+            self.songs_widget = ListWidget::with_items(songs);
+    
+            Ok(())
+        }
+        else { Err(DbError::ConnectionError) }
     }
 
     fn draw(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>) {
@@ -302,7 +306,7 @@ impl ListuiApp {
                     KeyCode::Up => self.playlists_widget.previous(),
                     KeyCode::Enter => { 
                         if let Some(ind) = self.playlists_widget.get_selected() {
-                            self.open_playlist(ind) 
+                            self.open_playlist(ind).unwrap();
                         }
                     },
                     KeyCode::Char('q') => return true,
@@ -346,13 +350,18 @@ impl ListuiApp {
                             },
                             'n' => self.play_next(),
                             'r' => self.toggle_shuffle(),
-                            'q' => self.close_playlist(),
+                            'q' => {
+                                self.close_playlist();
+                                // Terminate the app if it was playing a local playlist.
+                                if self.dao.is_none() { return true; }
+                            
+                            },
                             'h' => { self.current_screen = CurrentScreen::SongControls; },
                             '+' => self.player.increase_volume(10),
                             '-' => self.player.decrease_volume(10),
                             c => {  
-                                if c.is_ascii_digit() { 
-                                    let pcent = c.to_digit(10).unwrap() as usize * 10;
+                                if let Some(digit) = c.to_digit(10) { 
+                                    let pcent = digit as usize * 10;
                                     self.player.seek_percentage(pcent);
                                 }
                             },
@@ -374,11 +383,15 @@ impl ListuiApp {
         false
     }
 
-    fn open_playlist(&mut self, ind: usize) {
+    fn open_playlist(&mut self, ind: usize) -> Result<(), DbError> {
                  
         let playlist = self.playlists_widget.get_ind(ind);                            
         self.current_playlist = Some(playlist.title.clone());
-        self.load_songs(playlist.id);
+        self.load_songs(playlist.id)?;
+        
+        self.current_screen = CurrentScreen::Songs;
+
+        Ok(())
     }
 
     fn close_playlist(&mut self) {
@@ -449,7 +462,7 @@ impl ListuiApp {
         let mut filepath = self.playlist_dir.clone();
         filepath.push(OsStr::new(&filename));
 
-        if filepath.exists() { self.player.play_file(&filepath).unwrap(); }
+        if filepath.exists() { let _ = self.player.play_file(&filepath); }
         else if let Some(yt_id) = song.yt_id.as_ref() { 
             self.downloading = true;
             self.downloader.download_url(yt_id, &filepath);   

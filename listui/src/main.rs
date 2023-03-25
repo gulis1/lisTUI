@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
     // Directory the downloaded music will the placed.
-    let playlist_dir  =  (|| Some(PathBuf::from(env::var("DOWNLOAD_DIR").ok()?)))()
+    let download_dir  =  (|| Some(PathBuf::from(env::var("DOWNLOAD_DIR").ok()?)))()
         .unwrap_or_else(|| {
             let mut dir = dirs::audio_dir().expect("Cannot find audio directory.");
             dir.push("listui");
@@ -50,11 +50,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
             let result = get_youtube_playlist(&database_path, arg);
             match result {
-                Ok(Some(id)) => Some(ListuiApp::new_open_playlist(playlist_dir, database_path, id)?),
+                Ok(Some(id)) => Some(ListuiApp::new_open_playlist(download_dir, database_path, id)?),
                 Ok(None) => { 
-                    let path = PathBuf::from(arg);
+                    let path = PathBuf::from(arg).canonicalize()?;
                     match get_local_playlist(&path) {
-                        Some(tracks) => Some(ListuiApp::with_items(tracks, database_path, path)?),
+                        Some(tracks) => Some(ListuiApp::with_tracks(path, tracks)?),
                         None => None,
                     }
                 },
@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }   
-        else { Some(ListuiApp::new(playlist_dir, database_path)?) }
+        else { Some(ListuiApp::new(download_dir, database_path)?) }
     };
 
     if let Some(mut app) = app { app.run()?; }
