@@ -329,7 +329,7 @@ impl ListuiApp {
                         if let Some(ind) = self.songs_widget.get_selected() {
                             self.play_ind(ind);
                             self.songs_widget.clear_filter();
-                            self.songs_selmode = SelectionMode::Follow;
+                            self.activate_follow();
                         }
                     },
                     KeyCode::Left => { self.player.rewind(15); },
@@ -343,7 +343,7 @@ impl ListuiApp {
                         else { match c {
 
                             'p' => self.toggle_pause(),
-                            'f' => self.toggle_follow(),
+                            'f' => self.activate_follow(),
                             's' => {
                                 self.search_query = String::new();
                                 self.songs_widget.filter("");
@@ -408,7 +408,7 @@ impl ListuiApp {
         else { self.player.pause() }
     }
 
-    fn toggle_follow(&mut self) {
+    fn activate_follow(&mut self) {
         
         if let (false, Some(ind)) = (self.songs_widget.is_filtered(), self.current_song_ind) {
             // Don't activate follow mode if the song list is filtered.
