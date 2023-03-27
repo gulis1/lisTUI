@@ -1,29 +1,51 @@
 # listTUI
 
-### A simple, easy to use music player for the terminal, written in rust. Currently it support playing local and youtube playlists.
+ A simple, easy to use music player for the terminal, written in rust. Currently it support playing local and youtube playlists.
 
 ![](./docs/images/main.gif)
 
 
-## Installation
+# Installation
+
+## Using cargo
+
+You can compile and install lisTUI using the following command.
+```
+cargo install listui
+```
+
+The following dependencies are needed to compile the app:
+
+- [Development packages for libssl](https://docs.rs/openssl/0.10.25/openssl/#automatic)
+- Working git and cmake installations, and a c++ compiler.
+
+If  you want to be able to play youtube playlists, please make sure you have [yt-dlp](https://github.com/yt-dlp/yt-dlp#installation) and [ffmpeg](https://ffmpeg.org/download.html) installed as well.
+
+## Manual installation
 
 WIP
 
-## Usage
+# Usage
 
 Play a playlist stored in your computer:
 
-> listui ~/Music/playlist1
+```
+listui ~/Music/playlist1
+```
 
 Or a YouTube playlist:
-    
-> listui "https://www.youtube.com/playlist? list=PLauaob2FukqdpQf4g4ph7kY3IHOr-BwzJ"
+
+```
+listui "https://www.youtube.com/playlist? list=PLauaob2FukqdpQf4g4ph7kY3IHOr-BwzJ"
+```
 
 Or just launch the app and see all your saved playlists:
 
-> listui
+```
+listui
+```
 
-## Configuration
+# Configuration
 
 Currently lisTUI only has only three configurable settings:
 
