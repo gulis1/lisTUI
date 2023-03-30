@@ -24,14 +24,15 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_ra
 use rand::prelude::*;
 
 use crate::widgets::*;
-use crate::utils::time_str;
+use crate::utils::{time_str, probe_ffmpeg, probe_ytdlp};
 
 #[derive(Clone, Copy)]
 pub enum CurrentScreen {
 
     Playlists,
     Songs,
-    SongControls
+    SongControls,
+    YtDlpError
 }
 
 #[derive(Clone, Copy)]
@@ -49,7 +50,7 @@ pub struct ListuiApp {
     
     player: Player,
     dao: Option<Dao>,
-    downloader: Downloader,
+    downloader: Option<Downloader>,
 
     playlist_dir: PathBuf,
 
@@ -72,12 +73,12 @@ impl ListuiApp {
         Ok(Self {
            
             current_screen: CurrentScreen::Playlists,
-            playlists_widget: ListWidget::with_items(dao.get_playlists()?),
-            songs_widget: ListWidget::empty(),
+            playlists_widget: ListWidget::with_items("Playlists", dao.get_playlists()?),
+            songs_widget: ListWidget::empty("Playlists"),
             
             player: Player::default(),
             dao: Some(dao),
-            downloader: Downloader::new(3), // TODO: make max_downloads configurable.
+            downloader: Some(Downloader::new(3)), // TODO: make max_downloads configurable.
 
             playlist_dir,
 
@@ -91,13 +92,11 @@ impl ListuiApp {
         })
     }
 
-    pub fn new_open_playlist(playlist_dir: PathBuf, database_path: PathBuf, playlist_id: i32) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new_open_playlist(playlist_dir: PathBuf, database_path: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
 
         let mut app = ListuiApp::new(playlist_dir, database_path)?;
-
-        app.load_songs(playlist_id)?;
-        app.current_screen = CurrentScreen::Songs;
-
+        app.playlists_widget.select_ind(app.playlists_widget.total_len() - 1);
+        
         Ok(app)
     }
 
@@ -110,12 +109,12 @@ impl ListuiApp {
         Ok(Self {
            
             current_screen: CurrentScreen::Songs,
-            playlists_widget: ListWidget::empty(),
-            songs_widget: ListWidget::with_items(tracks),
+            playlists_widget: ListWidget::empty("Playlists"),
+            songs_widget: ListWidget::with_items("Playlists", tracks),
             
             player: Player::default(),
             dao: None,
-            downloader: Downloader::new(3), // TODO: make max_downloads configurable.
+            downloader: None,
 
             playlist_dir,
 
@@ -174,23 +173,25 @@ impl ListuiApp {
 
     fn check_song_received(&mut self) {
 
-        if self.downloading {
-            // Check if the download has finished.
-            match self.downloader.check_for_completed_download() {
-                Some(DownloadResult::Completed(id, path)) => {
+        if let Some(ref downloader) = self.downloader {
+            if self.downloading {
+                // Check if the download has finished.
+                if let Some((id, result)) = downloader.check_for_completed_download() {
+        
                     // The download that just finished is the one we were waiting for.
                     let yt_id = self.current_song.as_ref().and_then(|song| song.yt_id.as_ref());
                     if let Some(yt_id) = yt_id {
-                        if &id == yt_id{ 
-                            let _ = self.player.play_file(&path); 
+                        if &id == yt_id {  
                             self.downloading = false;
+                            match result {
+                                DownloadResult::Failed => self.play_next(),
+                                DownloadResult::Completed(path) => { let _ = self.player.play_file(&path); }
+                            }
                         }
                     }
-                },
-                Some(DownloadResult::Failed(_)) => self.play_next(),
-                None => {}, // The download that just finished is an older one.
-            }
-        }   
+                }
+            } 
+        }     
     }
     
     fn load_songs(&mut self, playlist_id: i32) -> Result<(), DbError> {
@@ -199,8 +200,8 @@ impl ListuiApp {
         if let Some(ref dao) = self.dao {
             let playlist = dao.get_playlist(playlist_id)?;
             let songs = dao.get_tracks(playlist_id)?;
+            self.songs_widget = ListWidget::with_items(&playlist.title, songs);
             self.current_playlist = Some(playlist.title);
-            self.songs_widget = ListWidget::with_items(songs);
     
             Ok(())
         }
@@ -209,20 +210,21 @@ impl ListuiApp {
 
     fn draw(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>) {
         
-        if frame.size().width < 25{ draw_not_enough_width(frame); }
-        else if frame.size().height < 10 { draw_not_enough_height(frame) }
-        else { match self.current_screen  {
+        if frame.size().width < 25{ draw_error_msg(frame, "-->(x_x)<--"); }
+        else if frame.size().height < 10 { draw_error_msg(frame,"Please make the terminal a bit taller :(") }
+        else { match self.current_screen {
 
             CurrentScreen::Playlists => self.draw_playlists(frame, frame.size()),
             CurrentScreen::Songs => self.draw_songs(frame, frame.size()),
-            CurrentScreen::SongControls => draw_controls_screen(frame, frame.size())
+            CurrentScreen::SongControls => draw_controls_screen(frame, frame.size()),
+            CurrentScreen::YtDlpError => draw_error_msg(frame, "Please install yt-dlp and ffmpeg first.")
         }}  
     }    
 
     fn draw_playlists(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
 
         if area.height < 20 || area.width < 50 {
-            self.playlists_widget.draw(frame, area, "Playlists");
+            self.playlists_widget.draw(frame, area);
         }
         else {
 
@@ -232,7 +234,7 @@ impl ListuiApp {
             .split(area);
 
             draw_logo(frame, chunks[0]);
-            self.playlists_widget.draw(frame, chunks[1], "Playlists");
+            self.playlists_widget.draw(frame, chunks[1]);
         }
     }
 
@@ -243,15 +245,8 @@ impl ListuiApp {
                 .constraints([Constraint::Length(area.height - 5), Constraint::Length(5)].as_ref())
                 .split(area);
 
-        if self.songs_widget.is_filtered() {
-            let s = format!(" 🔎︎ Search: {} ", self.search_query);
-            self.songs_widget.draw(frame, chunks[0], &s);
-        }
-        else {
-            let plist_title = self.current_playlist.as_ref().unwrap().as_str();
-            self.songs_widget.draw(frame, chunks[0], plist_title);
-        }
-        
+
+        self.songs_widget.draw(frame, chunks[0]);   
         self.draw_progress_bar(frame, chunks[1]);
     }
 
@@ -377,19 +372,21 @@ impl ListuiApp {
                     _ => {}
                 }
             },
-            CurrentScreen::SongControls => { self.current_screen = CurrentScreen::Songs; } 
+            CurrentScreen::SongControls => { self.current_screen = CurrentScreen::Songs; },
+            CurrentScreen::YtDlpError => { self.current_screen = CurrentScreen::Playlists; }
         }
         
         false
     }
 
     fn open_playlist(&mut self, ind: usize) -> Result<(), DbError> {
-                 
-        let playlist = self.playlists_widget.get_ind(ind);                            
-        self.current_playlist = Some(playlist.title.clone());
-        self.load_songs(playlist.id)?;
         
-        self.current_screen = CurrentScreen::Songs;
+        if probe_ytdlp() && probe_ffmpeg() {
+            let playlist = self.playlists_widget.get_ind(ind);                            
+            self.load_songs(playlist.id)?;
+            self.current_screen = CurrentScreen::Songs;
+        }
+        else { self.current_screen = CurrentScreen::YtDlpError; }
 
         Ok(())
     }
@@ -463,9 +460,9 @@ impl ListuiApp {
         filepath.push(OsStr::new(&filename));
 
         if filepath.exists() { let _ = self.player.play_file(&filepath); }
-        else if let Some(yt_id) = song.yt_id.as_ref() { 
+        else if let (Some(yt_id), Some(downloader)) = (song.yt_id.as_ref(), &self.downloader) { 
             self.downloading = true;
-            self.downloader.download_url(yt_id, &filepath);   
+            downloader.download_url(yt_id, &filepath);   
         }
     }
 }

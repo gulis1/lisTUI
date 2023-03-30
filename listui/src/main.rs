@@ -22,7 +22,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: ListuiArgs = argh::from_env();
 
-
     // Directory where the database and .env file will be located.
     let mut data_dir = dirs::data_dir().expect("Failed to create data directory.");
     data_dir.push("listui");
@@ -50,13 +49,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             dir
         });
 
-    let app: Option<ListuiApp> =  {
+    let app: Option<ListuiApp> = {
 
         if let Some(arg) = args.playlist.as_ref() {
     
             let result = get_youtube_playlist(&database_path, arg);
             match result {
-                Ok(Some(id)) => Some(ListuiApp::new_open_playlist(download_dir, database_path, id)?),
+                Ok(Some(_)) => Some(ListuiApp::new_open_playlist(download_dir, database_path)?),
                 Ok(None) => { 
                     let path = PathBuf::from(arg).canonicalize()?;
                     match get_local_playlist(&path) {

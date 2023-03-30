@@ -1,9 +1,10 @@
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
 use listui_lib::models::Track;
-use  listui_lib::{api::ApiClient, db::Dao};
+use listui_lib::{api::ApiClient, db::Dao};
 use regex::Regex;
 use std::env;
+use std::process::{Command, Stdio};
 
 // On success, returns the id of the new playlist stored in the DB.
 pub fn get_youtube_playlist(database_path: &Path, url: &str) -> Result<Option<i32>, Box<dyn std::error::Error>> {
@@ -79,4 +80,26 @@ pub fn time_str(s1: i32, s2: i32) -> String {
 
     if h2 == 0 { format!("{:02}:{:02} / {:02}:{:02}", m1, s1,  m2, s2) }
     else { format!("{:02}:{:02}:{:02} / {:02}:{:02}:{:02}", h1, m1, s1, h2, m2, s2) }
+}
+
+pub fn probe_ytdlp() -> bool {
+
+    let child = Command::new("yt-dlp")
+        .arg("--help")
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn();
+
+    child.is_ok()
+}
+
+pub fn probe_ffmpeg() -> bool {
+
+    let child = Command::new("ffmpeg")
+        .arg("-help")
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn();
+
+    child.is_ok()
 }

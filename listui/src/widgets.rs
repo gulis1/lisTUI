@@ -49,10 +49,10 @@ lazy_static! {
 // The filtering is only computed when the search query changes.
 pub(super) struct ListWidget<T: Drawable> {
 
+    title: String,
     state: ListState,
     items: Vec<T>,
     
-    filtered: bool,
     last_query: Option<String>,
     filtered_indexes: Vec<usize>,
     filter_state: ListState
@@ -60,35 +60,35 @@ pub(super) struct ListWidget<T: Drawable> {
 
 impl<T: Drawable> ListWidget<T> {
 
-    pub fn empty() -> Self {
+    pub fn empty(title: &str) -> Self {
 
         Self {
+            title: String::from(title),
             state: ListState::default(),
             items: Vec::new(),
 
             last_query: None,
             filtered_indexes: Vec::new(),
             filter_state: ListState::default(),
-            filtered: false
         }
     }
     
-    pub fn with_items(items: Vec<T>) -> Self {
+    pub fn with_items(title: &str, items: Vec<T>) -> Self {
 
         Self {
+            title: String::from(title),
             state: ListState::default(),
             items,
 
             last_query: None,
             filtered_indexes: Vec::new(),
             filter_state: ListState::default(),
-            filtered: false
         }
     }
 
     pub fn get_selected(&self) -> Option<usize> {
 
-        if self.filtered {
+        if self.is_filtered() {
             self.filter_state.selected().map(|ind| self.filtered_indexes[ind])
         }
         else { self.state.selected() }
@@ -96,8 +96,9 @@ impl<T: Drawable> ListWidget<T> {
 
     pub fn next(&mut self) {
         
-        let st = if self.filtered { &mut self.filter_state } else { &mut self.state };
-        let len = if self.filtered { self.filtered_indexes.len() } else { self.items.len() };
+        let filtered = self.is_filtered();
+        let st = if filtered { &mut self.filter_state } else { &mut self.state };
+        let len = if filtered { self.filtered_indexes.len() } else { self.items.len() };
         
         if len > 0 {
 
@@ -111,8 +112,9 @@ impl<T: Drawable> ListWidget<T> {
 
     pub fn previous(&mut self) {
         
-        let st = if self.filtered { &mut self.filter_state } else { &mut self.state };
-        let len = if self.filtered { self.filtered_indexes.len() } else { self.items.len()} ;
+        let filtered = self.is_filtered();
+        let st = if filtered { &mut self.filter_state } else { &mut self.state };
+        let len = if filtered { self.filtered_indexes.len() } else { self.items.len()} ;
 
         if len > 0 {
 
@@ -129,8 +131,9 @@ impl<T: Drawable> ListWidget<T> {
 
     pub fn select_ind(&mut self, ind: usize) {
 
-        let st = if self.filtered { &mut self.filter_state } else { &mut self.state };
-        let len = if self.filtered { self.filtered_indexes.len() } else { self.items.len() };
+        let filtered = self.is_filtered();
+        let st = if filtered { &mut self.filter_state } else { &mut self.state };
+        let len = if filtered { self.filtered_indexes.len() } else { self.items.len() };
 
         if ind < len {
             st.select(Some(ind));
@@ -141,7 +144,7 @@ impl<T: Drawable> ListWidget<T> {
 
         // self.last_query cannot be none is self.filtered is true
         // so using unwrap shuold be safe here.
-        if !self.filtered || self.last_query.as_ref().unwrap() != query {
+        if !self.is_filtered() || self.last_query.as_ref().unwrap() != query {
 
             self.filtered_indexes = self.items.iter()
                 .enumerate()
@@ -151,25 +154,24 @@ impl<T: Drawable> ListWidget<T> {
 
             self.filter_state = ListState::default();
             self.last_query = Some(String::from(query));
-            self.filtered = true;
         }    
     }
 
     pub fn clear_filter(&mut self) {
-        self.filtered = false;
+        self.last_query = None;
     }
 
     pub fn is_filtered(&self) -> bool {
-        self.filtered
+        self.last_query.is_some()
     }
 
-    pub fn draw(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect, title: &str) {
+    pub fn draw(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         
-        if self.filtered { self.draw_filtered(frame, area, title); }
-        else { self.draw_all(frame, area, title); }
+        if self.is_filtered() { self.draw_filtered(frame, area); }
+        else { self.draw_all(frame, area); }
     }
 
-    fn draw_all(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect, title: &str) {
+    fn draw_all(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
 
         let items: Vec<ListItem> = self.items
             .iter()
@@ -180,7 +182,7 @@ impl<T: Drawable> ListWidget<T> {
             .collect();
         
         let list = List::new(items)
-            .block(BLOCK.clone().title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD))))
+            .block(BLOCK.clone().title(Span::styled(self.title.as_str(), Style::default().add_modifier(Modifier::BOLD))))
             .highlight_style(
                 Style::default()
                     .fg(Color::Black)
@@ -192,7 +194,7 @@ impl<T: Drawable> ListWidget<T> {
         frame.render_stateful_widget(list, area, &mut self.state);
     }
 
-    fn draw_filtered(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect, title: &str)  {
+    fn draw_filtered(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect)  {
 
         let filtered: Vec<ListItem> = self.filtered_indexes
             .iter()
@@ -202,9 +204,10 @@ impl<T: Drawable> ListWidget<T> {
                 ListItem::new(lines).style(Style::default())
             })
             .collect();
- 
+        
+        let title = format!("🔎︎ Search: {} ", self.last_query.as_ref().expect("No query to search."));
         let list = List::new(filtered)
-            .block(BLOCK.clone().title(title))
+            .block(BLOCK.clone().title(title.as_str()))
             .highlight_style(
                 Style::default()
                     .fg(Color::Black)
@@ -234,17 +237,9 @@ pub fn draw_controls_screen(frame: &mut Frame<CrosstermBackend<Stdout>>, area: R
     frame.render_widget(p, area);
 }
 
-pub fn draw_not_enough_height(frame: &mut Frame<CrosstermBackend<Stdout>>) {
+pub fn draw_error_msg(frame: &mut Frame<CrosstermBackend<Stdout>>, msg: &str) {
 
-    let p = Paragraph::new("Please make the terminal a bit taller :(")
-        .alignment(Alignment::Center);
-
-    frame.render_widget(p, frame.size());
-}
-
-pub fn draw_not_enough_width(frame: &mut Frame<CrosstermBackend<Stdout>>) {
-
-    let p = Paragraph::new("-->(x_x)<--")
+    let p = Paragraph::new(msg)
         .alignment(Alignment::Center);
 
     frame.render_widget(p, frame.size());

@@ -8,8 +8,8 @@ use tokio::sync::{mpsc, Mutex, Semaphore, SemaphorePermit};
 
 
 pub enum DownloadResult {
-    Completed(String, PathBuf),
-    Failed(String)
+    Completed(PathBuf),
+    Failed,
 }
 
 /* My (probably "overengineered") implementation of a youtube downloader.
@@ -37,8 +37,8 @@ pub struct Downloader {
     // have the top priority in the queue.
     last_download: Arc<Mutex<Option<String>>>,  
 
-    receiver: RefCell<mpsc::Receiver<DownloadResult>>,
-    sender: mpsc::Sender<DownloadResult>
+    receiver: RefCell<mpsc::Receiver<(String, DownloadResult)>>,
+    sender: mpsc::Sender<(String, DownloadResult)>
 }
 
 impl Downloader {
@@ -51,7 +51,7 @@ impl Downloader {
             .build()
             .expect("Failed to obtain tokio runtime.");
         
-        let (sender, receiver) = mpsc::channel::<DownloadResult>(max_downloads);
+        let (sender, receiver) = mpsc::channel::<(String, DownloadResult)>(max_downloads);
         
         Self {
 
@@ -65,24 +65,20 @@ impl Downloader {
     }
 
     // Returns the status of the last finished download.
-    pub fn check_for_completed_download(&self) -> Option<DownloadResult> {
+    pub fn check_for_completed_download(&self) -> Option<(String, DownloadResult)> {
 
         match self.receiver.borrow_mut().try_recv() {
             Err(_) => None, // No downloads finished since the last time the functions was called.
-            Ok(d) => {
+            Ok((id, result)) => {
                 let mut last_download = self.last_download.blocking_lock();
-                let downloaded_id = match &d {
-                    DownloadResult::Completed(s, _) | DownloadResult::Failed(s) => s,
-                };
 
-                self.downloads.borrow_mut().remove(downloaded_id);
-
-                if last_download.is_some() && last_download.as_ref().unwrap() == downloaded_id {
+                self.downloads.borrow_mut().remove(&id);
+                if last_download.is_some() && last_download.as_ref().unwrap() == &id {
                     last_download.take();
                 }
 
-                Some(d)
-            },
+                Some((id, result))
+            }
         }
     }
 
@@ -126,7 +122,7 @@ impl Downloader {
                 drop(last_download);          
             }
             
-            let mut child = tokio::process::Command::new("yt-dlp")
+            let child = tokio::process::Command::new("yt-dlp")
                 .arg("-x")
                 .arg("--audio-format")
                 .arg("mp3")
@@ -138,14 +134,18 @@ impl Downloader {
                 .arg(format!("https://www.youtube.com/watch?v={id}"))
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .spawn()
-                .unwrap();
+                .spawn();
             
-            let exit = child.wait().await;
-            drop(permit);
-            
-            if exit.is_ok() && exit.unwrap().success() { let _ = sender.send(DownloadResult::Completed(id, file_path)).await; }
-            else { let _ = sender.send(DownloadResult::Failed(id)).await;}
+            drop(permit);   
+            let _ = match child {
+                Err(_) => sender.send((id, DownloadResult::Failed)).await,
+                Ok(mut child) => {
+                    
+                    let exit = child.wait().await;
+                    if exit.is_ok() && exit.unwrap().success() { sender.send((id, DownloadResult::Completed(file_path))).await }
+                    else { sender.send((id, DownloadResult::Failed)).await }
+                }
+            };
         });
     }
 }
