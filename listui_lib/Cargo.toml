@@ -1,6 +1,6 @@
 [package]
 name = "listui_lib"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Library with various utilities used by the lisTUI music player."
 license = "GPL-3.0"
