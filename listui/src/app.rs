@@ -21,7 +21,6 @@ use crossterm::event;
 use crossterm::event::{Event, KeyCode};
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
-use rand::prelude::*;
 
 use crate::widgets::*;
 use crate::utils::{time_str, probe_ffmpeg, probe_ytdlp};
@@ -60,7 +59,6 @@ pub struct ListuiApp {
     songs_selmode: SelectionMode,
 
     search_query: String,
-    shuffle: bool,
     downloading: bool
 }
 
@@ -87,7 +85,6 @@ impl ListuiApp {
             current_song_ind: None,
             songs_selmode: SelectionMode::Follow,
             search_query: String::new(),
-            shuffle: false,
             downloading: false
         })
     }
@@ -123,7 +120,6 @@ impl ListuiApp {
             current_song_ind: None,
             songs_selmode: SelectionMode::Follow,
             search_query: String::new(),
-            shuffle: false,
             downloading: false
         })
     }
@@ -344,7 +340,11 @@ impl ListuiApp {
                                 self.songs_widget.filter("");
                             },
                             'n' => self.play_next(),
-                            'r' => self.toggle_shuffle(),
+                            'b' => self.play_previous(),
+                            'r' => {
+                                self.stop_playing();
+                                self.songs_widget.toggle_shuffle();
+                            },
                             'q' => {
                                 self.close_playlist();
                                 // Terminate the app if it was playing a local playlist.
@@ -393,9 +393,7 @@ impl ListuiApp {
 
     fn close_playlist(&mut self) {
         
-        self.player.stop();
-        self.current_song = None;
-        self.current_song_ind = None;
+        self.stop_playing();
         self.current_screen = CurrentScreen::Playlists;   
     }
 
@@ -414,33 +412,30 @@ impl ListuiApp {
         }
     }
 
-    fn toggle_shuffle(&mut self) {
-
-        if let Some(ref mut playlist) = self.current_playlist {
-            if self.shuffle {
-                playlist.pop();
-                playlist.pop();
-                playlist.pop();
-                self.shuffle = false;
-            }
-            else {
-                playlist.push_str(" 🔀 ");
-                self.shuffle = true;
-            }
-
-            if self.current_song_ind.is_none() { self.play_next(); }
-        }  
-
+    fn play_previous(&mut self) {
+        
+        let ind = match self.current_song_ind {
+            Some(ind) => (ind -1 ) % self.songs_widget.total_len(),
+            None => 0,
+        };
+        
+        self.play_ind(ind);
     }
 
     fn play_next(&mut self) {
         
-        let ind = self.current_song_ind.unwrap_or(0);
-        let ind = 
-            if self.shuffle {random::<usize>() % self.songs_widget.total_len()}
-            else {(ind + 1) % self.songs_widget.total_len()};
-   
+        let ind = match self.current_song_ind {
+            Some(ind) => (ind + 1) % self.songs_widget.total_len(),
+            None => 0,
+        };
+        
         self.play_ind(ind);
+    }
+
+    fn stop_playing(&mut self) {
+        self.player.stop();
+        self.current_song_ind = None;
+        self.current_song = None;
     }
 
     fn play_ind(&mut self, ind: usize) {

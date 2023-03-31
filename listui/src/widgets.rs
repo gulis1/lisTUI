@@ -7,6 +7,8 @@ use tui::backend::CrosstermBackend;
 use tui::Frame;
 use tui::layout::{Rect, Alignment};
 use lazy_static::lazy_static;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 static LOGO: &str =
 r"
@@ -25,6 +27,8 @@ static CONTROLS: &str =
 ↑/↓  select.  
 ←/→  jump 5s.  
 F    follow mode.
+N    play next.
+B    play previous.
 P    pause (ESC to cancel).
 S    search.
 R    toffle shuffle.
@@ -53,6 +57,8 @@ pub(super) struct ListWidget<T: Drawable> {
     state: ListState,
     items: Vec<T>,
     
+    shuffled: bool,
+    ordered_items: Vec<usize>,
     last_query: Option<String>,
     filtered_indexes: Vec<usize>,
     filter_state: ListState
@@ -66,7 +72,8 @@ impl<T: Drawable> ListWidget<T> {
             title: String::from(title),
             state: ListState::default(),
             items: Vec::new(),
-
+            shuffled: false,
+            ordered_items: Vec::new(),
             last_query: None,
             filtered_indexes: Vec::new(),
             filter_state: ListState::default(),
@@ -78,8 +85,10 @@ impl<T: Drawable> ListWidget<T> {
         Self {
             title: String::from(title),
             state: ListState::default(),
+            
+            ordered_items: (0..items.len()).collect(),
+            shuffled: false,
             items,
-
             last_query: None,
             filtered_indexes: Vec::new(),
             filter_state: ListState::default(),
@@ -146,9 +155,9 @@ impl<T: Drawable> ListWidget<T> {
         // so using unwrap shuold be safe here.
         if !self.is_filtered() || self.last_query.as_ref().unwrap() != query {
 
-            self.filtered_indexes = self.items.iter()
+            self.filtered_indexes = self.ordered_items.iter()
                 .enumerate()
-                .filter(|(_, t)| t.get_text().to_ascii_lowercase().contains(query))
+                .filter(|(_, i)| self.items[**i].get_text().to_ascii_lowercase().contains(query))
                 .map(|(ind, _)| ind)
                 .collect();
 
@@ -173,10 +182,10 @@ impl<T: Drawable> ListWidget<T> {
 
     fn draw_all(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
 
-        let items: Vec<ListItem> = self.items
+        let items: Vec<ListItem> = self.ordered_items
             .iter()
-            .map(|p| {
-                let lines = Span::from(p.get_text());
+            .map(|i| {
+                let lines = Span::from(self.items[*i].get_text());
                 ListItem::new(lines).style(Style::default())
             })
             .collect();
@@ -200,7 +209,7 @@ impl<T: Drawable> ListWidget<T> {
             .iter()
             .map(|ind| {
 
-                let lines = Span::from(self.items[*ind].get_text());
+                let lines = Span::from(self.items[self.ordered_items[*ind]].get_text());
                 ListItem::new(lines).style(Style::default())
             })
             .collect();
@@ -220,11 +229,31 @@ impl<T: Drawable> ListWidget<T> {
     }
 
     pub fn get_ind(&self, ind: usize) -> &T {
-        &self.items[ind]
+        &self.items[self.ordered_items[ind]]
     }
 
     pub fn total_len(&self) -> usize {
         self.items.len()
+    }
+
+    pub fn toggle_shuffle(&mut self) {
+        
+
+        if self.shuffled {
+            self.ordered_items = (0..self.items.len()).collect();
+            self.state = ListState::default();
+            self.shuffled = false;
+            self.title.pop();
+            self.title.pop();
+            self.title.pop();
+        }
+        else {
+            let mut rng = thread_rng();
+            self.ordered_items.shuffle(&mut rng);
+            self.state = ListState::default();
+            self.shuffled = true;
+            self.title.push_str(" 🔀 ");
+        }   
     }
 }
 

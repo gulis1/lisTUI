@@ -58,3 +58,7 @@ lisTUI will look for the file ~/.config/listui.config and read the settings from
 YT_API_KEY=some_key
 DOWNLOAD_DIR=/home/user/Music/my_downloaded_songs
 ```
+
+# Changelog
+
+Check CHANGELOG.md in the GitHub repository.
