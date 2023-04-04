@@ -139,7 +139,9 @@ impl ListuiApp {
 
             terminal.draw(|f| self.draw(f))?;
 
-            if !self.player.is_playing() && self.current_song_ind.is_some() && !self.downloading { self.play_next(); }  
+            if !self.player.is_playing() && self.current_song_ind.is_some() && !self.downloading { 
+                self.play_next();
+            }  
             self.check_song_received();
 
             let timeout = tick_rate
@@ -454,7 +456,10 @@ impl ListuiApp {
         let mut filepath = self.playlist_dir.clone();
         filepath.push(OsStr::new(&filename));
 
-        if filepath.exists() { let _ = self.player.play_file(&filepath); }
+        if filepath.exists() {
+            self.downloading = false;
+            let _ = self.player.play_file(&filepath);
+        }
         else if let (Some(yt_id), Some(downloader)) = (song.yt_id.as_ref(), &self.downloader) { 
             self.downloading = true;
             downloader.download_url(yt_id, &filepath);   

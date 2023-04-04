@@ -1,3 +1,9 @@
+# 0.1.3
+
+- Bug fix: player got stuck when skipping a song that was being downloaded.
+
+- Bug fix: First song of a playlist was not being fetched uwhen using Invidious API.
+
 # 0.1.2
 
 - Changed how the shuffling system works. It now shows the order the shuffled songs will be played.

@@ -206,7 +206,7 @@ impl ApiClient {
         
         let mut videos: Vec<NewVideo> = Vec::new();
         let mut page: i32 = 1;
-        let mut last_index: i32 = 0;
+        let mut last_index: i32 = -1;
         let mut playlist: NewPlaylist;
 
         loop {
