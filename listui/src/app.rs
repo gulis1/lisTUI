@@ -23,7 +23,7 @@ use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 
 use crate::widgets::*;
-use crate::utils::{time_str, probe_ffmpeg, probe_ytdlp};
+use crate::utils;
 
 #[derive(Clone, Copy)]
 pub enum CurrentScreen {
@@ -64,15 +64,13 @@ pub struct ListuiApp {
 
 impl ListuiApp {
 
-    pub fn new(playlist_dir: PathBuf, database_path: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
-
-        let dao = Dao::new(&database_path)?;
+    pub fn new(playlist_dir: PathBuf, dao: Dao) -> Result<Self, Box<dyn std::error::Error>> {
 
         Ok(Self {
            
             current_screen: CurrentScreen::Playlists,
             playlists_widget: ListWidget::with_items("Playlists", dao.get_playlists()?),
-            songs_widget: ListWidget::empty("Playlists"),
+            songs_widget: ListWidget::empty("..."),
             
             player: Player::default(),
             dao: Some(dao),
@@ -89,9 +87,9 @@ impl ListuiApp {
         })
     }
 
-    pub fn new_open_playlist(playlist_dir: PathBuf, database_path: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new_open_playlist(playlist_dir: PathBuf, dao: Dao) -> Result<Self, Box<dyn std::error::Error>> {
 
-        let mut app = ListuiApp::new(playlist_dir, database_path)?;
+        let mut app = ListuiApp::new(playlist_dir, dao)?;
         app.playlists_widget.select_ind(app.playlists_widget.total_len() - 1);
         
         Ok(app)
@@ -262,7 +260,7 @@ impl ListuiApp {
             match self.player.get_progress() {
                 Some(progress) => {
                     let duration =  self.player.get_duration() as i32;
-                    (time_str(progress as i32, duration), progress as f64 / duration as f64)
+                    (utils::time_str(progress as i32, duration), progress as f64 / duration as f64)
                 }
                 None => { 
                     if self.downloading { (String::from("Downloading..."), 0.0) }
@@ -298,6 +296,16 @@ impl ListuiApp {
                     KeyCode::Enter => { 
                         if let Some(ind) = self.playlists_widget.get_selected() {
                             self.open_playlist(ind).unwrap();
+                        }
+                    },
+                    KeyCode::Char('d') => {
+                        if let Some(ind) = self.playlists_widget.get_selected() {
+                            self.delete_playlist(ind);
+                        }
+                    }
+                    KeyCode::Char('u') => {
+                        if let Some(ind) = self.playlists_widget.get_selected() {
+                            self.update_playlist(ind);
                         }
                     },
                     KeyCode::Char('q') => return true,
@@ -381,7 +389,7 @@ impl ListuiApp {
 
     fn open_playlist(&mut self, ind: usize) -> Result<(), DbError> {
         
-        if probe_ytdlp() && probe_ffmpeg() {
+        if utils::probe_ytdlp() && utils::probe_ffmpeg() {
             let playlist = self.playlists_widget.get_ind(ind);                            
             self.load_songs(playlist.id)?;
             self.current_screen = CurrentScreen::Songs;
@@ -389,6 +397,24 @@ impl ListuiApp {
         else { self.current_screen = CurrentScreen::YtDlpError; }
 
         Ok(())
+    }
+
+    fn delete_playlist(&mut self, ind: usize) {
+        if let Some(dao) = self.dao.as_ref() {
+            dao.delete_playlist(self.playlists_widget.get_ind(ind).id).expect("Failed to delete playlist.");
+            let playlists = dao.get_playlists().expect("Failed to get playlists.");
+            self.playlists_widget = ListWidget::with_items("Playlists", playlists);
+        }
+    }
+
+    fn update_playlist(&mut self, ind: usize) {
+        if let Some(dao) = self.dao.as_ref() {
+            
+            let playlist = self.playlists_widget.get_ind(ind);
+            let (_, videos) = utils::get_youtube_playlist(&playlist.yt_id, false).expect("Failed to fetch playlist info.",);
+            dao.replace_tracks(playlist.id, videos).expect("Failed to update videos.");
+            self.playlists_widget = ListWidget::with_items("Playlists", dao.get_playlists().expect("Failed to get playlists."));
+        }
     }
 
     fn close_playlist(&mut self) {
@@ -414,6 +440,7 @@ impl ListuiApp {
 
     fn play_previous(&mut self) {
         
+        self.downloading = false;
         let ind = match self.current_song_ind {
             Some(ind) => (ind -1 ) % self.songs_widget.total_len(),
             None => 0,
@@ -424,6 +451,7 @@ impl ListuiApp {
 
     fn play_next(&mut self) {
         
+        self.downloading = false;
         let ind = match self.current_song_ind {
             Some(ind) => (ind + 1) % self.songs_widget.total_len(),
             None => 0,

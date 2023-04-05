@@ -11,7 +11,7 @@ categories = ["command-line-utilities", "multimedia", "multimedia::audio"]
 keywords = ["music", "playlist", "music_player", "terminal", "youtube"]
 
 [dependencies]
-listui_lib = { path = "../listui_lib", version="0.1.1" }
+listui_lib = { path = "../listui_lib", version="0.1.2" }
 tui = "0.19"
 crossterm = "0.26.1"
 dotenvy = "0.15"

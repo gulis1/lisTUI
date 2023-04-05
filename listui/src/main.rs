@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use std::env;
 use app::ListuiApp;
 use argh::FromArgs;
-use utils::{get_youtube_playlist, get_local_playlist};
+use listui_lib::db::Dao;
+use utils::{get_youtube_playlist, get_local_playlist, parse_playlist_url};
 
 #[derive(FromArgs)]
 /// A simple music player for your terminal.
@@ -51,29 +52,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app: Option<ListuiApp> = {
 
+        let dao = Dao::new(&database_path)?;
         if let Some(arg) = args.playlist.as_ref() {
-    
-            let result = get_youtube_playlist(&database_path, arg);
-            match result {
-                Ok(Some(_)) => Some(ListuiApp::new_open_playlist(download_dir, database_path)?),
-                Ok(None) => { 
-                    let path = PathBuf::from(arg).canonicalize()?;
-                    match get_local_playlist(&path) {
-                        Some(tracks) => Some(ListuiApp::with_tracks(path, tracks)?),
-                        None => None,
+            
+            let playlist_ytid = parse_playlist_url(arg);
+            if let Some(playlist_ytid) = playlist_ytid {
+                
+                let result = get_youtube_playlist(&playlist_ytid, true);
+                match result {
+                    Ok((playlist, videos)) => {
+                        let playlist = dao.save_playlist(playlist)?;
+                        dao.save_tracks(videos, playlist.id)?;
+                        Some(ListuiApp::new_open_playlist(download_dir, dao)?)
+                    },
+                    Err(e) => { 
+                        eprintln!("{}", e); 
+                        None
                     }
-                },
-                Err(e) => { 
-                    eprintln!("{}", e); 
-                    None
+                }
+            }
+            else {
+                let path = PathBuf::from(arg).canonicalize()?;
+                match get_local_playlist(&path) {
+                    Some(tracks) => Some(ListuiApp::with_tracks(path, tracks)?),
+                    None => {
+                        eprintln!("Invalid argument.");
+                        None
+                    },
                 }
             }
         }   
-        else { Some(ListuiApp::new(download_dir, database_path)?) }
+        else { Some(ListuiApp::new(download_dir, dao)?) }
     };
 
     if let Some(mut app) = app { app.run()?; }
-    else { eprintln!("Invalid argument.") }
-    
+       
    Ok(())
 }

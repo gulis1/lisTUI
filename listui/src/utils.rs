@@ -1,45 +1,36 @@
 use std::fs::read_dir;
-use std::path::{Path, PathBuf};
-use listui_lib::models::Track;
-use listui_lib::{api::ApiClient, db::Dao};
+use std::path::PathBuf;
+use listui_lib::models::{Track, NewVideo, NewPlaylist};
+use listui_lib::api::ApiClient;
 use regex::Regex;
 use std::env;
 use std::process::{Command, Stdio};
 
-// On success, returns the id of the new playlist stored in the DB.
-pub fn get_youtube_playlist(database_path: &Path, url: &str) -> Result<Option<i32>, Box<dyn std::error::Error>> {
 
-    let re = Regex::new(r"^https?://(?:w{3}.)?(?:(?:youtube\.com)|(?:youtu\.be))/.+\?(?:.+&)*list=(PL.+?)(?:&|$)").expect("Failed to compile regex.");
+pub fn parse_playlist_url(url: &str) -> Option<String> {
     
-    let re_match = re.captures(url)
-        .and_then(|c| c.get(1));
+    let re = Regex::new(r"^https?://(?:w{3}.)?(?:(?:youtube\.com)|(?:youtu\.be))/.+\?(?:.+&)*list=(PL.+?)(?:&|$)").expect("Failed to compile regex.");
+    Some(String::from(re.captures(url)  .and_then(|c| c.get(1))?.as_str()))
+}
 
-    if let Some(id) = re_match {
+// On success, returns the id of the new playlist stored in the DB.
+pub fn get_youtube_playlist(playlist_id: &str, print_messages: bool) -> Result<(NewPlaylist, Vec<NewVideo>), Box<dyn std::error::Error>> {
 
-        let dto = Dao::new(database_path)?;
+    let yt_api_key = env::var("YT_API_KEY");
+    let client = match yt_api_key {
+        Ok(key) => {
+            if print_messages { println!("Fetching videos from YouTube api...") };
+            ApiClient::from_youtube( key)
+        },
+        Err(_) => {
+            if print_messages { println!("Fetching videos from Invidious api. This can take up to a few minutes.") };
+            ApiClient::from_invidious()
+        }
+    };
+    let (playlist, videos) = client.fetch_playlist(playlist_id)?;
+    if print_messages { println!("Succesfully fetched {}, containing {} songs.", playlist.title, videos.len()); }
 
-        let yt_api_key = env::var("YT_API_KEY");
-        let client = match yt_api_key {
-            Ok(key) => {
-                println!("Fetching videos from YouTube api...");
-                ApiClient::from_youtube( key)
-            },
-            Err(_) => {
-                println!("Fetching videos from Invidious api. This can take up to a few minutes.");
-                ApiClient::from_invidious()
-            }
-        };
-
-        let (playlist, videos) = client.fetch_playlist(id.as_str())?;
-        let n_videos = videos.len();
-
-        let pl = dto.save_playlist(playlist)?;
-        dto.save_tracks(videos, pl.id)?;
-
-        println!("Succesfully fetched {}, containing {n_videos} songs.", pl.title);
-        Ok(Some(pl.id))
-    }
-    else { Ok(None) }
+    Ok((playlist, videos))
 }
 
 // Returns a list of the tracks inside a local directory. Only works with mp3 files currently.

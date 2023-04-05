@@ -132,21 +132,14 @@ impl Dao {
             .map(|_| ()).map_err(convert_err)
     }
 
-    pub fn delete_track(&self, video_id: i32) -> Result<(), DbError> {
+    pub fn replace_tracks(&self, playlist_id: i32,  videos: Vec<NewVideo>) -> Result<(), DbError> {
+        // Removes all tracks asociated with a playlists and inserts the new ones.
 
+        diesel::delete(TrackTable::table.filter(TrackTable::columns::playlist_id.is(playlist_id)))
+            .execute(&mut*self.connection.borrow_mut()).map_err(convert_err)?;
 
-        let result: Result<usize, DieselError> = diesel::delete(TrackTable::table.filter(TrackTable::columns::id.is(video_id)))
-            .execute(&mut*self.connection.borrow_mut());
-
-        match result {
-
-            Ok(n) => {
-
-                if n == 0 { Err(DbError::NotFoundError) }
-                else { Ok(()) }       
-            },
-            Err(e) => Err(convert_err(e))
-        }
+        self.save_tracks(videos, playlist_id)?;
+        Ok(())
     }
 }
 
