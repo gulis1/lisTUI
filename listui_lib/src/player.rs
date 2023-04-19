@@ -2,11 +2,24 @@ use std::cell::RefCell;
 use std::path::Path;
 use soloud::*;
 
+#[derive(Debug)]
+pub struct WavWrapper(pub Wav);
+
+unsafe impl Send for WavWrapper {}
+impl Default for WavWrapper {
+    fn default() -> Self {
+        Self(Wav::default())
+    }
+}
+
+
+#[derive(Debug)]
 pub struct Player {
 
     sl: RefCell<Soloud>,
     current_handle: RefCell<Option<Handle>>,
-    wav: RefCell<Wav>,
+    wav: RefCell<WavWrapper>
+
 }
 
 impl Default for Player {
@@ -16,7 +29,7 @@ impl Default for Player {
         Self {
             sl: RefCell::new(Soloud::default().expect("Unable to initialize soloud engine.")),
             current_handle: RefCell::new(None),
-            wav: RefCell::new(audio::Wav::default())
+            wav: RefCell:: new(WavWrapper::default())
         }
     }
 }
@@ -26,9 +39,19 @@ impl Player {
 
     pub fn play_file(&self, path: &Path) -> Result<(), SoloudError> {
         
-        self.wav.borrow_mut().load(path)?;
-        let handle = self.sl.borrow_mut().play(&*self.wav.borrow());
+        let wav = Wav::from_path(path)?;
+        let handle = self.sl.borrow_mut().play(&wav);
         self.current_handle.replace(Some(handle));
+        self.wav.replace(WavWrapper(wav));
+
+        Ok(())
+    }
+
+    pub fn play_wav(&self, wav: WavWrapper) -> Result<(), SoloudError> {
+
+        let handle = self.sl.borrow_mut().play(&wav.0);
+        self.current_handle.replace(Some(handle));
+        self.wav.replace(wav);
 
         Ok(())
     }
@@ -51,7 +74,7 @@ impl Player {
         } 
     }
 
-    pub fn seek(&self, seconds: usize) {
+    pub fn seek(&self, seconds: u64) {
 
         let handle = self.current_handle.borrow();
         if let Some(handle) = *handle {
@@ -59,7 +82,7 @@ impl Player {
         }
     }
 
-    pub fn seek_percentage(&self, percentage: usize) {
+    pub fn seek_percentage(&self, percentage: u64) {
 
         let handle = self.current_handle.borrow();
         if let Some(handle) = *handle {
@@ -68,7 +91,7 @@ impl Player {
         }
     }
 
-    pub fn forward(&self, seconds: usize) {
+    pub fn forward(&self, seconds: u64) {
 
         let handle = *self.current_handle.borrow();
         let progress = self.get_progress();
@@ -85,7 +108,7 @@ impl Player {
         }
     }
 
-    pub fn rewind(&self, seconds: usize) {
+    pub fn rewind(&self, seconds: u64) {
 
         let handle = *self.current_handle.borrow();
         let progress = self.get_progress();
@@ -122,14 +145,14 @@ impl Player {
         }
     }
 
-    pub fn get_progress(&self) -> Option<usize> {
+    pub fn get_progress(&self) -> Option<u64> {
 
         let handle = self.current_handle.borrow();
-        handle.map(|h| self.sl.borrow().stream_position(h) as usize)
+        handle.map(|h| self.sl.borrow().stream_position(h) as u64)
     }
 
-    pub fn get_duration(&self) -> usize {
-        self.wav.borrow().length() as usize
+    pub fn get_duration(&self) -> u64 {
+        self.wav.borrow().0.length() as u64
     }
 
     pub fn set_repeat(&self, value: bool) {

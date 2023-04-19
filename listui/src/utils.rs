@@ -6,6 +6,11 @@ use regex::Regex;
 use std::env;
 use std::process::{Command, Stdio};
 
+#[derive(Debug)]
+pub enum Message {
+
+    SongFinished
+}
 
 pub fn parse_playlist_url(url: &str) -> Option<String> {
     
@@ -39,13 +44,14 @@ pub fn get_local_playlist(path: &PathBuf) -> Option<Vec<Track>> {
     if path.is_dir() {
         
         let tracks = read_dir(path).ok()?
-            .flatten()
-            .filter_map(|entry| {
+            .flatten().
+            enumerate()
+            .filter_map(|(ind, entry)| {
                 let filename = entry.file_name();
                 let filename = filename.to_string_lossy();
                 if filename.ends_with(".mp3") {
                     Some(Track{
-                        id: 0,
+                        id: ind as i32,
                         title: entry.path().with_extension("").file_name().unwrap().to_string_lossy().to_string(),
                         yt_id: None,
                         playlist_id: None,

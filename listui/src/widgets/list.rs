@@ -1,57 +1,18 @@
 use std::io::Stdout;
+
 use listui_lib::models::Drawable;
 use tui::style::{Style, Color, Modifier};
 use tui::text::Span;
-use tui::widgets::{ListState, Paragraph, Block, Borders, ListItem, List, BorderType};
+use tui::widgets::{ListState, ListItem, List};
 use tui::backend::CrosstermBackend;
 use tui::Frame;
-use tui::layout::{Rect, Alignment};
-use lazy_static::lazy_static;
+use tui::layout::Rect;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
-static LOGO: &str =
-r"
-$$\ $$\        $$$$$$$$\ $$\   $$\ $$$$$$\ 
-$$ |\__|       \__$$  __|$$ |  $$ |\_$$  _|
-$$ |$$\  $$$$$$$\ $$ |   $$ |  $$ |  $$ |  
-$$ |$$ |$$  _____|$$ |   $$ |  $$ |  $$ |  
-$$ |$$ |\$$$$$$\  $$ |   $$ |  $$ |  $$ |  
-$$ |$$ | \____$$\ $$ |   $$ |  $$ |  $$ |  
-$$ |$$ |$$$$$$$  |$$ |   \$$$$$$  |$$$$$$\ 
-\__|\__|\_______/ \__|    \______/ \______|";
-
-static CONTROLS: &str =
-"\
-↵    play.
-↑/↓  select.  
-←/→  jump 5s.  
-F    follow mode.
-N    play next.
-B    play previous.
-P    pause (ESC to cancel).
-S    search.
-R    toffle shuffle.
-Q    go back to last screen.
-
-Press any key to close this screen.";
-
-// Accent color.
-pub const ACC_COLOR: Color = Color::LightBlue;
-lazy_static! {
-    
-    // Default block.
-    pub static ref BLOCK: Block<'static> = {
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(ACC_COLOR))
-    };
-}
-
 // Generic list widget, that support drawing a filtered view of itself.
 // The filtering is only computed when the search query changes.
-pub(super) struct ListWidget<T: Drawable> {
+pub struct ListWidget<T: Drawable> {
 
     title: String,
     state: ListState,
@@ -191,11 +152,11 @@ impl<T: Drawable> ListWidget<T> {
             .collect();
         
         let list = List::new(items)
-            .block(BLOCK.clone().title(Span::styled(self.title.as_str(), Style::default().add_modifier(Modifier::BOLD))))
+            .block(super::BLOCK.clone().title(Span::styled(self.title.as_str(), Style::default().add_modifier(Modifier::BOLD))))
             .highlight_style(
                 Style::default()
                     .fg(Color::Black)
-                    .bg(ACC_COLOR)
+                    .bg(super::ACC_COLOR)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol(">> ");
@@ -216,11 +177,11 @@ impl<T: Drawable> ListWidget<T> {
         
         let title = format!("🔎︎ Search: {} ", self.last_query.as_ref().expect("No query to search."));
         let list = List::new(filtered)
-            .block(BLOCK.clone().title(title.as_str()))
+            .block(super::BLOCK.clone().title(title.as_str()))
             .highlight_style(
                 Style::default()
                     .fg(Color::Black)
-                    .bg(ACC_COLOR)
+                    .bg(super::ACC_COLOR)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol(">> ");
@@ -255,30 +216,4 @@ impl<T: Drawable> ListWidget<T> {
             self.title.push_str(" 🔀 ");
         }   
     }
-}
-
-pub fn draw_controls_screen(frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
-
-    let p = Paragraph::new(CONTROLS)
-        .block(BLOCK.clone().title("Controls"))
-        .alignment(Alignment::Left);
-
-    frame.render_widget(p, area);
-}
-
-pub fn draw_error_msg(frame: &mut Frame<CrosstermBackend<Stdout>>, msg: &str) {
-
-    let p = Paragraph::new(msg)
-        .alignment(Alignment::Center);
-
-    frame.render_widget(p, frame.size());
-}
-
-pub fn draw_logo(frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
-
-    let p = Paragraph::new(LOGO)
-        .alignment(Alignment::Center)
-        .style(Style::default().fg(ACC_COLOR));
-
-    frame.render_widget(p, area);
 }

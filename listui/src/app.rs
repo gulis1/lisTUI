@@ -1,18 +1,14 @@
 use listui_lib::db::{Dao, DbError};
 
 use listui_lib::models::{Playlist, Track};
-use listui_lib::player::Player;
-use listui_lib::downloader::{Downloader, DownloadResult};
 
+use tokio::sync::mpsc;
 use tui::Frame;
 use tui::Terminal;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout, Rect};
-use tui::style::Style;
-use tui::widgets::{Borders, Gauge, Paragraph};
 
 use std::error::Error;
-use std::ffi::OsStr;
 use std::io::Stdout;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -23,6 +19,8 @@ use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 
 use crate::widgets::*;
+use crate::widgets::list::ListWidget;
+use crate::widgets::player::PlayerWidget;
 use crate::utils;
 
 #[derive(Clone, Copy)]
@@ -46,15 +44,12 @@ pub struct ListuiApp {
     current_screen: CurrentScreen,
     playlists_widget: ListWidget<Playlist>,
     songs_widget: ListWidget<Track>,
-    
-    player: Player,
-    dao: Option<Dao>,
-    downloader: Option<Downloader>,
+    player_widget: PlayerWidget,
+    recv: mpsc::Receiver<utils::Message>,
 
-    playlist_dir: PathBuf,
+    dao: Option<Dao>,
 
     current_playlist: Option<String>,
-    current_song: Option<Track>,
     current_song_ind: Option<usize>,
     songs_selmode: SelectionMode,
 
@@ -66,20 +61,18 @@ impl ListuiApp {
 
     pub fn new(playlist_dir: PathBuf, dao: Dao) -> Result<Self, Box<dyn std::error::Error>> {
 
+        let (sender, recv) = mpsc::channel::<utils::Message>(5);
         Ok(Self {
            
             current_screen: CurrentScreen::Playlists,
             playlists_widget: ListWidget::with_items("Playlists", dao.get_playlists()?),
             songs_widget: ListWidget::empty("..."),
+            player_widget: PlayerWidget::new(&playlist_dir, sender, 3),
+            recv,
             
-            player: Player::default(),
             dao: Some(dao),
-            downloader: Some(Downloader::new(3)), // TODO: make max_downloads configurable.
-
-            playlist_dir,
 
             current_playlist: None,
-            current_song: None,
             current_song_ind: None,
             songs_selmode: SelectionMode::Follow,
             search_query: String::new(),
@@ -101,20 +94,18 @@ impl ListuiApp {
             Some(playlist_dir.file_name()?.to_string_lossy().to_string())
         })().unwrap_or(String::from("Unknown playlist."));
 
+        let (sender, recv) = mpsc::channel::<utils::Message>(5);
         Ok(Self {
            
             current_screen: CurrentScreen::Songs,
             playlists_widget: ListWidget::empty("Playlists"),
             songs_widget: ListWidget::with_items("Playlists", tracks),
+            player_widget: PlayerWidget::new(&playlist_dir, sender, 3),
+            recv,
             
-            player: Player::default(),
             dao: None,
-            downloader: None,
-
-            playlist_dir,
 
             current_playlist: Some(playlist_name),
-            current_song: None,
             current_song_ind: None,
             songs_selmode: SelectionMode::Follow,
             search_query: String::new(),
@@ -137,7 +128,6 @@ impl ListuiApp {
 
             terminal.draw(|f| self.draw(f))?;
 
-            if !self.player.is_playing() && self.current_song_ind.is_some() && !self.downloading { self.play_next(); }  
             self.check_song_received();
 
             let timeout = tick_rate
@@ -166,26 +156,11 @@ impl ListuiApp {
     }
 
     fn check_song_received(&mut self) {
-
-        if let Some(ref downloader) = self.downloader {
-            if self.downloading {
-                // Check if the download has finished.
-                if let Some((id, result)) = downloader.check_for_completed_download() {
         
-                    // The download that just finished is the one we were waiting for.
-                    let yt_id = self.current_song.as_ref().and_then(|song| song.yt_id.as_ref());
-                    if let Some(yt_id) = yt_id {
-                        if &id == yt_id {  
-                            self.downloading = false;
-                            match result {
-                                DownloadResult::Failed => self.play_next(),
-                                DownloadResult::Completed(path) => { let _ = self.player.play_file(&path); }
-                            }
-                        }
-                    }
-                }
-            } 
-        }     
+        match self.recv.try_recv() {
+            Ok(utils::Message::SongFinished) => self.play_next(), 
+            Err(_) => {}
+        }
     }
     
     fn load_songs(&mut self, playlist_id: i32) -> Result<(), DbError> {
@@ -239,47 +214,8 @@ impl ListuiApp {
                 .constraints([Constraint::Length(area.height - 5), Constraint::Length(5)].as_ref())
                 .split(area);
 
-
         self.songs_widget.draw(frame, chunks[0]);   
-        self.draw_progress_bar(frame, chunks[1]);
-    }
-
-    fn draw_progress_bar(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
-        
-        let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(2), Constraint::Length(area.height - 2)].as_ref())
-                .split(area);
-
-        // TODO: maybe move this to a new struct inside the widget module?
-        let mut title = "No song selected.";
-        if let Some(song) = self.current_song.as_ref() { title = &song.title; }
-   
-        let (label, ratio) = {
-            
-            match self.player.get_progress() {
-                Some(progress) => {
-                    let duration =  self.player.get_duration() as i32;
-                    (utils::time_str(progress as i32, duration), progress as f64 / duration as f64)
-                }
-                None => { 
-                    if self.downloading { (String::from("Downloading..."), 0.0) }
-                    else { (String::new(), 0.0) }
-                }
-            }
-        };
-        
-        let gauge = Gauge::default()
-            .block(BLOCK.clone().borders(Borders::ALL ^ Borders::BOTTOM).title(title))
-            .gauge_style(Style::default().fg(ACC_COLOR))
-            .ratio(ratio)
-            .label(label);
-                
-        let p = Paragraph::new(format!("\nVolume: {}% (press H for help)", self.player.get_volume()))
-            .block(BLOCK.clone().borders(Borders::ALL ^ Borders::TOP));
-    
-        frame.render_widget(gauge, chunks[0]);
-        frame.render_widget(p, chunks[1]);
+        self.player_widget.draw(frame, chunks[1]);
     }
 
     fn process_input(&mut self, key: KeyCode) -> bool {
@@ -331,8 +267,8 @@ impl ListuiApp {
                             self.activate_follow();
                         }
                     },
-                    KeyCode::Left => { self.player.rewind(15); },
-                    KeyCode::Right => { self.player.forward(15); },
+                    KeyCode::Left => { self.player_widget.rewind(15); },
+                    KeyCode::Right => { self.player_widget.forward(15); },
                     KeyCode::Char(c) => {
                            
                         if self.songs_widget.is_filtered() { 
@@ -341,7 +277,7 @@ impl ListuiApp {
                         }
                         else { match c {
 
-                            'p' => self.toggle_pause(),
+                            'p' => self.player_widget.toggle_pause(), 
                             'f' => self.activate_follow(),
                             's' => {
                                 self.search_query = String::new();
@@ -360,12 +296,12 @@ impl ListuiApp {
                             
                             },
                             'h' => { self.current_screen = CurrentScreen::SongControls; },
-                            '+' => self.player.increase_volume(10),
-                            '-' => self.player.decrease_volume(10),
+                            '+' => self.player_widget.increase_volume(10),
+                            '-' => self.player_widget.decrease_volume(10),
                             c => {  
                                 if let Some(digit) = c.to_digit(10) { 
-                                    let pcent = digit as usize * 10;
-                                    self.player.seek_percentage(pcent);
+                                    let pcent = digit as u64 * 10;
+                                    self.player_widget.seek_percentage(pcent);
                                 }
                             },
                         }}   
@@ -423,12 +359,6 @@ impl ListuiApp {
         self.current_screen = CurrentScreen::Playlists;   
     }
 
-    fn toggle_pause(&mut self) {
-        
-        if self.player.is_paused() { self.player.resume(); }
-        else { self.player.pause() }
-    }
-
     fn activate_follow(&mut self) {
         
         if let (false, Some(ind)) = (self.songs_widget.is_filtered(), self.current_song_ind) {
@@ -461,9 +391,8 @@ impl ListuiApp {
     }
 
     fn stop_playing(&mut self) {
-        self.player.stop();
+        self.player_widget.stop();
         self.current_song_ind = None;
-        self.current_song = None;
     }
 
     fn play_ind(&mut self, ind: usize) {
@@ -471,21 +400,8 @@ impl ListuiApp {
         // Move the cursor if follow mode is active.
         if let SelectionMode::Follow = self.songs_selmode{ self.songs_widget.select_ind(ind); }
         
-        self.player.stop();
         let song = self.songs_widget.get_ind(ind);       
-        self.current_song = Some(song.clone());
         self.current_song_ind = Some(ind);
-
-        let mut filename = song.title.replace(['/', '\\', ':', '*', '<', '>', '|', '\"'], "");
-        filename.push_str(".mp3");
-
-        let mut filepath = self.playlist_dir.clone();
-        filepath.push(OsStr::new(&filename));
-
-        if filepath.exists() { let _ = self.player.play_file(&filepath); }
-        else if let (Some(yt_id), Some(downloader)) = (song.yt_id.as_ref(), &self.downloader) { 
-            self.downloading = true;
-            downloader.download_url(yt_id, &filepath);   
-        }
+        self.player_widget.play(song.clone());
     }
 }
