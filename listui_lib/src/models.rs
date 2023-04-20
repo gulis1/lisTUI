@@ -36,7 +36,7 @@ impl Drawable for Playlist {
     }
 }
 
-#[derive(Insertable)]
+#[derive(Insertable, Debug)]
 #[diesel(table_name = track)]
 pub struct NewVideo {
     pub title: String,
@@ -44,7 +44,7 @@ pub struct NewVideo {
     pub playlist_id: Option<i32>
 }
 
-#[derive(Insertable)]
+#[derive(Insertable, Debug)]
 #[diesel(table_name = playlist)]
 pub struct NewPlaylist {
     pub title: String,

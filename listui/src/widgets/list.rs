@@ -1,12 +1,12 @@
 use std::io::Stdout;
 
 use listui_lib::models::Drawable;
-use tui::style::{Style, Color, Modifier};
-use tui::text::Span;
-use tui::widgets::{ListState, ListItem, List};
-use tui::backend::CrosstermBackend;
-use tui::Frame;
-use tui::layout::Rect;
+use ratatui::style::{Style, Color, Modifier};
+use ratatui::text::Span;
+use ratatui::widgets::{ListState, ListItem, List};
+use ratatui::backend::CrosstermBackend;
+use ratatui::Frame;
+use ratatui::layout::Rect;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 

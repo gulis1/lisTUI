@@ -12,7 +12,7 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::sync::MutexGuard;
 use tokio::{runtime, task::JoinHandle, sync::{Mutex, mpsc}, time::sleep};
-use tui::{Frame, backend::CrosstermBackend, layout::{Rect, Layout, Direction, Constraint}, widgets::{Gauge, Borders, Paragraph}, style::Style};
+use ratatui::{Frame, backend::CrosstermBackend, layout::{Rect, Layout, Direction, Constraint}, widgets::{Gauge, Borders, Paragraph}, style::Style};
 
 use crate::utils;
 
@@ -38,18 +38,14 @@ pub struct PlayerWidget {
 
 impl PlayerWidget {
  
-    pub fn new(path: &Path, sender: mpsc::Sender<utils::Message>, max_downloads: usize) -> Self {
+    pub fn new(path: &Path, runtime: &Arc<runtime::Runtime>, sender: mpsc::Sender<utils::Message>, max_downloads: usize) -> Self {
         
         Self {
             downloader: Arc::new(Downloader::new(max_downloads)),
             data: Arc::new(Mutex::new(PlayerData::default())),
             dir: path.to_path_buf(),
             sender,
-            runtime: Arc::new(runtime::Builder::new_multi_thread()
-                .enable_all()
-                .worker_threads(2)
-                .build()
-                .expect("Failed to create runtime"))
+            runtime: Arc::clone(runtime)
         }
     }   
 
@@ -78,9 +74,9 @@ impl PlayerWidget {
             let mut filename = track.title.replace(['/', '\\', ':', '*', '<', '>', '|', '\"'], "");
             filename.push_str(".mp3");
         
-            let yt_id = track.yt_id.expect("No youtube id available.");
             path.push(OsStr::new(&filename));
             if !path.exists() { 
+                let yt_id = track.yt_id.expect("No youtube id available.");
                 let mut guard = player_data.lock().await;
                 guard.downloading = true;
                 drop(guard);

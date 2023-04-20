@@ -1,7 +1,7 @@
 use std::fs::read_dir;
 use std::path::PathBuf;
 use listui_lib::models::{Track, NewVideo, NewPlaylist};
-use listui_lib::api::ApiClient;
+use listui_lib::api::{ApiClient, ApiError};
 use regex::Regex;
 use std::env;
 use std::process::{Command, Stdio};
@@ -9,7 +9,19 @@ use std::process::{Command, Stdio};
 #[derive(Debug)]
 pub enum Message {
 
-    SongFinished
+    SongFinished,
+    NewPlaylist(Result<(NewPlaylist, Vec<NewVideo>), ApiError>),
+    PlaylistUpdate(Result<(i32, Vec<NewVideo>), ApiError>)
+}
+
+#[derive(Debug)]
+pub struct ProbingError {}
+impl std::error::Error for ProbingError {}
+impl std::fmt::Display for ProbingError {
+    
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Please install ffmpeg and yt-dlp fist.")
+    }
 }
 
 pub fn parse_playlist_url(url: &str) -> Option<String> {
@@ -19,33 +31,34 @@ pub fn parse_playlist_url(url: &str) -> Option<String> {
 }
 
 // On success, returns the id of the new playlist stored in the DB.
-pub fn get_youtube_playlist(playlist_id: &str, print_messages: bool) -> Result<(NewPlaylist, Vec<NewVideo>), Box<dyn std::error::Error>> {
+pub async fn get_youtube_playlist(playlist_id: &str) -> Result<(NewPlaylist, Vec<NewVideo>), ApiError> {
 
     let yt_api_key = env::var("YT_API_KEY");
     let client = match yt_api_key {
         Ok(key) => {
-            if print_messages { println!("Fetching videos from YouTube api...") };
-            ApiClient::from_youtube( key)
+            // if print_messages { println!("Fetching videos from YouTube api...") };
+            ApiClient::from_youtube(key)
         },
         Err(_) => {
-            if print_messages { println!("Fetching videos from Invidious api. This can take up to a few minutes.") };
+            // if print_messages { println!("Fetching videos from Invidious api. This can take up to a few minutes.") };
             ApiClient::from_invidious()
         }
     };
-    let (playlist, videos) = client.fetch_playlist(playlist_id)?;
-    if print_messages { println!("Succesfully fetched {}, containing {} songs.", playlist.title, videos.len()); }
+    let (playlist, videos) = client.fetch_playlist(playlist_id).await?;
+    // if print_messages { println!("Succesfully fetched {}, containing {} songs.", playlist.title, videos.len()); }
 
     Ok((playlist, videos))
 }
 
 // Returns a list of the tracks inside a local directory. Only works with mp3 files currently.
-pub fn get_local_playlist(path: &PathBuf) -> Option<Vec<Track>> {
+pub fn get_local_playlist(path: &mut PathBuf) -> Option<Vec<Track>> {
 
     if path.is_dir() {
         
+        let path = path.canonicalize().ok()?;
         let tracks = read_dir(path).ok()?
-            .flatten().
-            enumerate()
+            .flatten()
+            .enumerate()
             .filter_map(|(ind, entry)| {
                 let filename = entry.file_name();
                 let filename = filename.to_string_lossy();

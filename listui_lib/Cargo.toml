@@ -13,7 +13,7 @@ readme = "README.md"
 diesel = { version = "2.0.3", features = ["sqlite"] }
 serde = {version = "1.0.152", features = ["derive"]}
 serde_json = "1.0.93"
-reqwest = {version = "0.11.14", features = ["blocking"]}
+reqwest = {version = "0.11.14"}
 soloud = "1.0.2"
 tokio = {version = "1.26.0", features = ["process"]}
 diesel_migrations = "2.0.0"

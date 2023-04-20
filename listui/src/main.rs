@@ -8,7 +8,7 @@ use std::env;
 use app::ListuiApp;
 use argh::FromArgs;
 use listui_lib::db::Dao;
-use utils::{get_youtube_playlist, get_local_playlist, parse_playlist_url};
+use utils::{get_local_playlist, parse_playlist_url};
 
 #[derive(FromArgs)]
 /// A simple music player for your terminal.
@@ -35,7 +35,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = dotenvy::from_path(config_dir);
     }
     
-
     let database_path  =  (|| Some(PathBuf::from(env::var("DATABASE_PATH").ok()?)))()
         .unwrap_or_else(|| {
             data_dir.push("db.sqlite");
@@ -54,31 +53,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let dao = Dao::new(&database_path)?;
         if let Some(arg) = args.playlist.as_ref() {
-            
+                        
             let playlist_ytid = parse_playlist_url(arg);
-            if let Some(playlist_ytid) = playlist_ytid {
-                
-                let result = get_youtube_playlist(&playlist_ytid, true);
-                match result {
-                    Ok((playlist, videos)) => {
-                        let playlist = dao.save_playlist(playlist)?;
-                        dao.save_tracks(videos, playlist.id)?;
-                        Some(ListuiApp::new_open_playlist(download_dir, dao)?)
-                    },
-                    Err(e) => { 
-                        eprintln!("{}", e); 
-                        None
+            match playlist_ytid {
+                Some(yt_id) => Some(ListuiApp::new_open_playlist(download_dir, dao, yt_id)?),
+                None => {
+
+                    let mut path = PathBuf::from(arg);
+                    match get_local_playlist(&mut path) {
+                        Some(tracks) => Some(ListuiApp::with_tracks(path, tracks)?),
+                        None => {
+                            eprintln!("Directory not found.");
+                            None
+                        },
                     }
-                }
-            }
-            else {
-                let path = PathBuf::from(arg).canonicalize()?;
-                match get_local_playlist(&path) {
-                    Some(tracks) => Some(ListuiApp::with_tracks(path, tracks)?),
-                    None => {
-                        eprintln!("Invalid argument.");
-                        None
-                    },
                 }
             }
         }   
