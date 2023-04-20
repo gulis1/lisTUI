@@ -59,8 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(yt_id) => Some(ListuiApp::new_open_playlist(download_dir, dao, yt_id)?),
                 None => {
 
-                    let mut path = PathBuf::from(arg);
-                    match get_local_playlist(&mut path) {
+                    let path = PathBuf::from(arg);
+                    match get_local_playlist(&path) {
                         Some(tracks) => Some(ListuiApp::with_tracks(path, tracks)?),
                         None => {
                             eprintln!("Directory not found.");

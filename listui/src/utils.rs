@@ -1,5 +1,5 @@
 use std::fs::read_dir;
-use std::path::PathBuf;
+use std::path::Path;
 use listui_lib::models::{Track, NewVideo, NewPlaylist};
 use listui_lib::api::{ApiClient, ApiError};
 use regex::Regex;
@@ -51,7 +51,7 @@ pub async fn get_youtube_playlist(playlist_id: &str) -> Result<(NewPlaylist, Vec
 }
 
 // Returns a list of the tracks inside a local directory. Only works with mp3 files currently.
-pub fn get_local_playlist(path: &mut PathBuf) -> Option<Vec<Track>> {
+pub fn get_local_playlist(path: &Path) -> Option<Vec<Track>> {
 
     if path.is_dir() {
         
