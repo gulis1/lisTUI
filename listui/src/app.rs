@@ -62,8 +62,7 @@ pub struct ListuiApp {
     current_song_ind: Option<usize>,
     songs_selmode: SelectionMode,
 
-    search_query: String,
-    downloading: bool
+    search_query: String
 }
 
 impl ListuiApp {
@@ -83,7 +82,7 @@ impl ListuiApp {
             current_screen: CurrentScreen::Playlists,
             playlists_widget: ListWidget::with_items("Playlists", dao.get_playlists()?),
             songs_widget: ListWidget::empty("..."),
-            player_widget: PlayerWidget::new(&playlist_dir, &runtime, sender.clone(), 3),
+            player_widget: PlayerWidget::new(&playlist_dir, Arc::clone(&runtime), sender.clone(), 3),
             loading_widget: None, 
             sender,
             recv,
@@ -94,7 +93,6 @@ impl ListuiApp {
             current_song_ind: None,
             songs_selmode: SelectionMode::Follow,
             search_query: String::new(),
-            downloading: false,
             runtime
         })
     }
@@ -123,7 +121,7 @@ impl ListuiApp {
             current_screen: CurrentScreen::Songs,
             playlists_widget: ListWidget::empty("Playlists"),
             songs_widget: ListWidget::with_items("Playlists", tracks),
-            player_widget: PlayerWidget::new(&playlist_dir, &runtime, sender.clone(), 3),
+            player_widget: PlayerWidget::new(&playlist_dir, Arc::clone(&runtime), sender.clone(), 3),
             loading_widget: None,
             sender,
             recv,
@@ -134,7 +132,6 @@ impl ListuiApp {
             current_song_ind: None,
             songs_selmode: SelectionMode::Follow,
             search_query: String::new(),
-            downloading: false,
             runtime
         })
     }
@@ -461,7 +458,6 @@ impl ListuiApp {
 
     fn play_previous(&mut self) {
         
-        self.downloading = false;
         let ind = match self.current_song_ind {
             Some(ind) => (ind -1 ) % self.songs_widget.total_len(),
             None => 0,
@@ -472,7 +468,6 @@ impl ListuiApp {
 
     fn play_next(&mut self) {
         
-        self.downloading = false;
         let ind = match self.current_song_ind {
             Some(ind) => (ind + 1) % self.songs_widget.total_len(),
             None => 0,

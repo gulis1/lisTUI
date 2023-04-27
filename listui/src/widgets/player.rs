@@ -38,14 +38,14 @@ pub struct PlayerWidget {
 
 impl PlayerWidget {
  
-    pub fn new(path: &Path, runtime: &Arc<runtime::Runtime>, sender: mpsc::Sender<utils::Message>, max_downloads: usize) -> Self {
+    pub fn new(path: &Path, runtime: Arc<runtime::Runtime>, sender: mpsc::Sender<utils::Message>, max_downloads: usize) -> Self {
         
         Self {
             downloader: Arc::new(Downloader::new(max_downloads)),
             data: Arc::new(Mutex::new(PlayerData::default())),
             dir: path.to_path_buf(),
             sender,
-            runtime: Arc::clone(runtime)
+            runtime
         }
     }   
 
