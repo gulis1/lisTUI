@@ -1,3 +1,9 @@
+# 0.2.0
+
+- Playlists can now be updated and deleted from the playlists menu.
+- The app now displays a loading animation when it's fetching a playlist.
+- Some internal changes to how the player works.
+
 # 0.1.3
 
 - Bug fix: player got stuck when skipping a song that was being downloaded.
