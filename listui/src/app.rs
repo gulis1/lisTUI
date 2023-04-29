@@ -20,7 +20,7 @@ use crossterm::event::{Event, KeyCode};
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 
-use crate::widgets::*;
+use crate::widgets;
 use crate::widgets::list::ListWidget;
 use crate::widgets::loading::LoadingWidget;
 use crate::widgets::player::PlayerWidget;
@@ -32,7 +32,7 @@ pub enum CurrentScreen {
 
     Playlists,
     Songs,
-    SongControls,
+    Controls(Box<CurrentScreen>),
     LoadingScreen,
     ErrorScreen(String, Box<CurrentScreen>)
 }
@@ -80,7 +80,7 @@ impl ListuiApp {
         Ok(Self {
             
             current_screen: CurrentScreen::Playlists,
-            playlists_widget: ListWidget::with_items("Playlists", dao.get_playlists()?),
+            playlists_widget: ListWidget::with_items("Playlists (press h for help)", dao.get_playlists()?),
             songs_widget: ListWidget::empty("..."),
             player_widget: PlayerWidget::new(&playlist_dir, Arc::clone(&runtime), sender.clone(), 3),
             loading_widget: None, 
@@ -119,8 +119,8 @@ impl ListuiApp {
 
         Ok(Self {
             current_screen: CurrentScreen::Songs,
-            playlists_widget: ListWidget::empty("Playlists"),
-            songs_widget: ListWidget::with_items("Playlists", tracks),
+            playlists_widget: ListWidget::empty("Playlists (press h for help)"),
+            songs_widget: ListWidget::with_items(playlist_dir.file_name().unwrap().to_str().unwrap(), tracks),
             player_widget: PlayerWidget::new(&playlist_dir, Arc::clone(&runtime), sender.clone(), 3),
             loading_widget: None,
             sender,
@@ -207,7 +207,7 @@ impl ListuiApp {
                     let playlist = dao.save_playlist(new_playlist)?;
                     dao.save_tracks(tracks, playlist.id)?;              
                     self.current_screen = CurrentScreen::Playlists;
-                    self.playlists_widget = ListWidget::with_items("Playlists", dao.get_playlists()?);
+                    self.playlists_widget = ListWidget::with_items("Playlists (press h for help)", dao.get_playlists()?);
                     self.playlists_widget.select_ind(self.playlists_widget.total_len() - 1);
                     Ok(())
                 },
@@ -236,15 +236,15 @@ impl ListuiApp {
 
     fn draw(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>) {
         
-        if frame.size().width < 25{ draw_error_msg(frame, "-->(x_x)<--"); }
-        else if frame.size().height < 10 { draw_error_msg(frame,"Please make the terminal a bit taller :(") }
+        if frame.size().width < 25{ widgets::draw_error_msg(frame, "-->(x_x)<--"); }
+        else if frame.size().height < 10 { widgets::draw_error_msg(frame,"Please make the terminal a bit taller :(") }
         else { match &self.current_screen {
 
             CurrentScreen::Playlists => self.draw_playlists(frame, frame.size()),
             CurrentScreen::Songs => self.draw_songs(frame, frame.size()),
-            CurrentScreen::SongControls => draw_controls_screen(frame, frame.size()),
+            CurrentScreen::Controls(_) => widgets::draw_controls_screen(frame, frame.size()),
             CurrentScreen::LoadingScreen => self.draw_loading_screen(frame, frame.size()),
-            CurrentScreen::ErrorScreen(msg, _) => draw_error_msg(frame, msg),
+            CurrentScreen::ErrorScreen(msg, _) => widgets::draw_error_msg(frame, msg),
         }}; 
     }
 
@@ -255,7 +255,7 @@ impl ListuiApp {
     }
 
     fn draw_playlists(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
-
+        
         if area.height < 20 || area.width < 50 {
             self.playlists_widget.draw(frame, area);
         }
@@ -266,7 +266,7 @@ impl ListuiApp {
             .constraints([Constraint::Length(10), Constraint::Length(area.height - 10)].as_ref())
             .split(area);
 
-            draw_logo(frame, chunks[0]);
+            widgets::draw_logo(frame, chunks[0]);
             self.playlists_widget.draw(frame, chunks[1]);
         }
     }
@@ -308,6 +308,7 @@ impl ListuiApp {
                         }
                     },
                     KeyCode::Char('q') => return Ok(true),
+                    KeyCode::Char('h') => { self.current_screen = CurrentScreen::Controls(Box::new(self.current_screen.clone())); },
                     _ => {}
                 }
             },
@@ -358,7 +359,7 @@ impl ListuiApp {
                                 if self.dao.is_none() { return Ok(true); }
                             
                             },
-                            'h' => { self.current_screen = CurrentScreen::SongControls; },
+                            'h' => { self.current_screen = CurrentScreen::Controls(Box::new(self.current_screen.clone())); },
                             '+' => self.player_widget.increase_volume(10),
                             '-' => self.player_widget.decrease_volume(10),
                             c => {  
@@ -379,7 +380,7 @@ impl ListuiApp {
                     _ => {}
                 }
             },
-            CurrentScreen::SongControls => self.current_screen = CurrentScreen::Songs,
+            CurrentScreen::Controls(previous_screen) => self.current_screen = *previous_screen.clone(),
             CurrentScreen::LoadingScreen => {},
             CurrentScreen::ErrorScreen(_, previous_screen) => { self.current_screen = *previous_screen.clone(); }
         }
@@ -403,7 +404,7 @@ impl ListuiApp {
         let dao = self.dao.as_ref().expect("No connection to database.");
         dao.delete_playlist(self.playlists_widget.get_ind(ind).id)?;
         let playlists = dao.get_playlists()?;
-        self.playlists_widget = ListWidget::with_items("Playlists", playlists);
+        self.playlists_widget = ListWidget::with_items("Playlists (press h for help)", playlists);
 
         Ok(())
     }
