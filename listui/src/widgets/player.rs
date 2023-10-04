@@ -71,9 +71,10 @@ impl PlayerWidget {
         let sender = self.sender.clone();
         self.runtime.spawn(async move {
             
-            let mut filename = track.title.replace(['/', '\\', ':', '*', '<', '>', '|', '\"'], "");
+            let mut filename = if track.yt_id.is_some() { track.title.replace(['/', '\\', ':', '*', '<', '>', '|', '\"'], "") }
+                else { track.title.clone()};
+
             filename.push_str(".mp3");
-        
             path.push(OsStr::new(&filename));
             if !path.exists() { 
                 let yt_id = track.yt_id.expect("No youtube id available.");
@@ -177,7 +178,9 @@ impl PlayerWidget {
 
     pub fn stop(&mut self) {
         let mut data = self.data.blocking_lock();
+        data.downloading = false;
         stop_timer(&mut data);
+        data.current_track.take();
         data.player.stop();
     }
 

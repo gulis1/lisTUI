@@ -3,11 +3,11 @@ mod app;
 mod utils;
 
 use std::fs::create_dir_all;
-use std::path::PathBuf;
 use std::env;
 use app::ListuiApp;
 use argh::FromArgs;
 use listui_lib::db::Dao;
+use path_clean::PathClean;
 use utils::{get_local_playlist, parse_playlist_url};
 
 #[derive(FromArgs)]
@@ -35,19 +35,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = dotenvy::from_path(config_dir);
     }
     
-    let database_path  =  (|| Some(PathBuf::from(env::var("DATABASE_PATH").ok()?)))()
+    let database_path  =  (|| Some(path_clean::clean(env::var("DATABASE_PATH").ok()?)))()
         .unwrap_or_else(|| {
             data_dir.push("db.sqlite");
             data_dir
         });
 
     // Directory the downloaded music will the placed.
-    let download_dir  =  (|| Some(PathBuf::from(env::var("DOWNLOAD_DIR").ok()?)))()
+    let download_dir  =  (|| Some(path_clean::clean(env::var("DOWNLOAD_DIR").ok()?)))()
         .unwrap_or_else(|| {
             let mut dir = dirs::audio_dir().expect("Cannot find audio directory.");
             dir.push("listui");
             dir
-        });
+        }).clean();
 
     let app: Option<ListuiApp> = {
 
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(yt_id) => Some(ListuiApp::new_open_playlist(download_dir, dao, yt_id)?),
                 None => {
 
-                    let path = PathBuf::from(arg);
+                    let path = path_clean::clean(arg);
                     match get_local_playlist(&path) {
                         Some(tracks) => Some(ListuiApp::with_tracks(path, tracks)?),
                         None => {

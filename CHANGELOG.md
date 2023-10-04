@@ -1,3 +1,10 @@
+# 0.2.1
+
+- Bug fix: relative paths didn't work when using local playlists.
+- Bug fix: local tracks with illegal Windows filenames now work properly on Linux.
+- Bug fix: a song would still begin playing after being downloaded even if the playlists was closed.
+
+
 # 0.2.0
 
 - Playlists can now be updated and deleted from the playlists menu.
@@ -8,7 +15,7 @@
 
 - Bug fix: player got stuck when skipping a song that was being downloaded.
 
-- Bug fix: First song of a playlist was not being fetched uwhen using Invidious API.
+- Bug fix: first song of a playlist was not being fetched uwhen using Invidious API.
 
 # 0.1.2
 
