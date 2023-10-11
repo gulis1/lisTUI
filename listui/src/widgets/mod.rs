@@ -46,22 +46,18 @@ Playlists menu:
     ↵    play.
     ↑/↓  select.
     U    update playlist.
-    D    delete playlist (Does not delete files from disk)
+    D    delete playlist (Does not delete files from disk).
     Q    quit.
 
 Tracks menu:
 
-    ↵    play.
-    ↑/↓  select.  
-    ←/→  jump 5s.  
-    F    follow mode.
-    N    play next.
-    B    play previous.
-    P    pause (ESC to cancel).
-    S    search.
-    R    toffle shuffle.
-    Q    go back to last screen.
-
+    ↵    play.                          N    play next.
+    ↑/↓  select.                        B    play previous.
+    ←/→  jump 5s.                       B    play previous.
+    +/-  volume up/down.                S    search.
+    F    follow mode.                   R    toffle shuffle.
+    Q    go back to last screen.    
+    
 
 Press any key to close this screen.";
 

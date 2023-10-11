@@ -175,7 +175,7 @@ impl<T: Drawable> ListWidget<T> {
             })
             .collect();
         
-        let title = format!("🔎︎ Search: {} ", self.last_query.as_ref().expect("No query to search."));
+        let title = format!(" ≫  Search: {} ", self.last_query.as_ref().expect("No query to search."));
         let list = List::new(filtered)
             .block(super::BLOCK.clone().title(title.as_str()))
             .highlight_style(
@@ -207,13 +207,14 @@ impl<T: Drawable> ListWidget<T> {
             self.title.pop();
             self.title.pop();
             self.title.pop();
+            self.title.pop();
         }
         else {
             let mut rng = thread_rng();
             self.ordered_items.shuffle(&mut rng);
             self.state = ListState::default();
             self.shuffled = true;
-            self.title.push_str(" 🔀 ");
+            self.title.push_str(" ⤨  ");
         }   
     }
 }

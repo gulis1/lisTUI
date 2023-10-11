@@ -153,7 +153,9 @@ impl PlayerWidget {
             match data_guard.player.get_progress() {
                 Some(progress) => {
                     let duration = data_guard.player.get_duration() as i32;
-                    (utils::time_str(progress as i32, duration), progress as f64 / duration as f64)
+                    let label = utils::time_str(progress as i32, duration, data_guard.player.is_paused());
+                    let ratio = progress as f64 / duration as f64;
+                    (label, ratio)
                 },
                 None => { 
                     if data_guard.downloading { (String::from("Downloading..."), 0.0) }
@@ -208,22 +210,28 @@ impl PlayerWidget {
     pub fn seek_percentage(&mut self, pcent: u64) {
         
         let mut guard = self.data.blocking_lock();
-        guard.player.seek_percentage(pcent);
-        set_timer(&self.runtime, &mut guard, self.sender.clone());
+        if guard.player.is_playing() {
+            guard.player.seek_percentage(pcent);
+            set_timer(&self.runtime, &mut guard, self.sender.clone());
+        }
     }
 
     pub fn forward(&mut self, seconds: u64)  {
 
         let mut guard = self.data.blocking_lock();
-        guard.player.forward(seconds);
-        set_timer(&self.runtime, &mut guard, self.sender.clone());
+        if guard.player.is_playing() {
+            guard.player.forward(seconds);
+            set_timer(&self.runtime, &mut guard, self.sender.clone());
+        }       
     }
 
     pub fn rewind(&mut self, seconds: u64) {
         
         let mut guard = self.data.blocking_lock();
-        guard.player.rewind(seconds);
-        set_timer(&self.runtime, &mut guard, self.sender.clone());
+        if guard.player.is_playing() {
+            guard.player.rewind(seconds);
+            set_timer(&self.runtime, &mut guard, self.sender.clone());
+        }
     }
 }
 

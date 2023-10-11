@@ -80,7 +80,9 @@ pub fn get_local_playlist(path: &Path) -> Option<Vec<Track>> {
     else { None }
 }
 
-pub fn time_str(s1: i32, s2: i32) -> String {
+pub fn time_str(s1: i32, s2: i32, paused: bool) -> String {
+
+    let separator = if paused {"▮▮"} else {"▶"};
 
     let (m1, s1) = (s1 / 60, s1 % 60);
     let (h1, m1) = (m1 / 60, m1 % 60);
@@ -88,8 +90,8 @@ pub fn time_str(s1: i32, s2: i32) -> String {
     let (m2, s2) = (s2 / 60, s2 % 60);
     let (h2, m2) = (m2 / 60, m2 % 60);
 
-    if h2 == 0 { format!("{:02}:{:02} / {:02}:{:02}", m1, s1,  m2, s2) }
-    else { format!("{:02}:{:02}:{:02} / {:02}:{:02}:{:02}", h1, m1, s1, h2, m2, s2) }
+    if h2 == 0 { format!("{:02}:{:02} {separator} {:02}:{:02}", m1, s1,  m2, s2) }
+    else { format!("{:02}:{:02}:{:02} {separator} {:02}:{:02}:{:02}", h1, m1, s1, h2, m2, s2) }
 }
 
 pub fn probe_ytdlp() -> bool {
