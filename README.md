@@ -36,7 +36,7 @@ listui ~/Music/playlist1
 Or a YouTube playlist:
 
 ```
-listui "https://www.youtube.com/playlist? list=PLauaob2FukqdpQf4g4ph7kY3IHOr-BwzJ"
+listui "https://www.youtube.com/playlist?list=PLauaob2FukqdpQf4g4ph7kY3IHOr-BwzJ"
 ```
 
 Or just launch the app and see all your saved playlists:
