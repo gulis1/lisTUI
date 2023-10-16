@@ -123,12 +123,7 @@ impl PlayerWidget {
                         return;
                     }
 
-                    let seconds = data_guard.player.get_duration();
-                    data_guard.end_timer.replace(rt.spawn(async move {
-                        
-                        sleep(Duration::from_secs(seconds)).await;    
-                        sender.send(utils::Message::SongFinished).await.expect("Failed to send message.");
-                    }));
+                    set_timer(&rt, &mut data_guard, sender);
                 }));
             }
         });
