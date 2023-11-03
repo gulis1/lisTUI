@@ -47,7 +47,7 @@ listui
 
 # Configuration
 
-Currently lisTUI only has only three configurable settings:
+Currently lisTUI has only three configurable settings:
 
 - **DATABASE_PATH**: the path where the sqlite database will be stored.
 - **DOWNLOAD_DIR**: the directory where newly downloaded tracks will be stored.
