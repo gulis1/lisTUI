@@ -45,8 +45,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| {
             let mut dir = dirs::audio_dir().expect("Cannot find audio directory.");
             dir.push("listui");
-            dir
-        }).canonicalize()?;
+            dir       
+        });
+    
+    create_dir_all(&download_dir).expect("Failed to create download directory");
 
     let app: Option<ListuiApp> = {
 

@@ -1,3 +1,7 @@
+# 0.2.3
+
+- Bug fix: app failed to create the direcotry to place downloaded youtube songs.
+
 # 0.2.2
 
 - Bug fix: fixed relative paths again.

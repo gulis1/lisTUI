@@ -1,6 +1,6 @@
 [package]
 name = "listui"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "A simple music player for the terminal, written in Rust. "
 license = "GPL-3.0"
