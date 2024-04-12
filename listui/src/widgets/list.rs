@@ -1,10 +1,7 @@
-use std::io::Stdout;
-
 use listui_lib::models::Drawable;
 use ratatui::style::{Style, Color, Modifier};
 use ratatui::text::Span;
 use ratatui::widgets::{ListState, ListItem, List};
-use ratatui::backend::CrosstermBackend;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use rand::seq::SliceRandom;
@@ -135,13 +132,13 @@ impl<T: Drawable> ListWidget<T> {
         self.last_query.is_some()
     }
 
-    pub fn draw(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         
         if self.is_filtered() { self.draw_filtered(frame, area); }
         else { self.draw_all(frame, area); }
     }
 
-    fn draw_all(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn draw_all(&mut self, frame: &mut Frame, area: Rect) {
 
         let items: Vec<ListItem> = self.ordered_items
             .iter()
@@ -164,7 +161,7 @@ impl<T: Drawable> ListWidget<T> {
         frame.render_stateful_widget(list, area, &mut self.state);
     }
 
-    fn draw_filtered(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect)  {
+    fn draw_filtered(&mut self, frame: &mut Frame, area: Rect)  {
 
         let filtered: Vec<ListItem> = self.filtered_indexes
             .iter()

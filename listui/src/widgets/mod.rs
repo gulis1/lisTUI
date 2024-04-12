@@ -2,11 +2,8 @@ pub mod list;
 pub mod player;
 pub mod loading;
 
-use std::io::Stdout;
-
 use ratatui::style::{Style, Color,};
 use ratatui::widgets::{Paragraph, Block, Borders,BorderType};
-use ratatui::backend::CrosstermBackend;
 use ratatui::Frame;
 use ratatui::layout::{Rect, Alignment, Layout, Constraint};
 use lazy_static::lazy_static;
@@ -75,7 +72,7 @@ lazy_static! {
 }
 
 
-pub fn draw_controls_screen(frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+pub fn draw_controls_screen(frame: &mut Frame, area: Rect) {
 
     let p = Paragraph::new(CONTROLS)
         .block(BLOCK.clone().title("Controls"))
@@ -84,7 +81,7 @@ pub fn draw_controls_screen(frame: &mut Frame<CrosstermBackend<Stdout>>, area: R
     frame.render_widget(p, area);
 }
 
-pub fn draw_error_msg(frame: &mut Frame<CrosstermBackend<Stdout>>, msg: &str) {
+pub fn draw_error_msg(frame: &mut Frame, msg: &str) {
 
     if frame.size().height < 20 {
         frame.render_widget(Paragraph::new(msg).style(Style::default().fg(Color::Red)).alignment(Alignment::Center), frame.size());  
@@ -101,7 +98,7 @@ pub fn draw_error_msg(frame: &mut Frame<CrosstermBackend<Stdout>>, msg: &str) {
     }
 }
 
-pub fn draw_logo(frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+pub fn draw_logo(frame: &mut Frame, area: Rect) {
 
     let p = Paragraph::new(LOGO)
         .alignment(Alignment::Center)

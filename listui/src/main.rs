@@ -2,11 +2,12 @@ mod widgets;
 mod app;
 mod utils;
 
+use std::fs::File;
 use std::{fs::create_dir_all, path::PathBuf};
-use std::env;
 use app::ListuiApp;
 use argh::FromArgs;
-use listui_lib::db::Dao;
+use listui_lib::db::Database;
+use simplelog::{Config, LevelFilter, WriteLogger};
 use utils::{get_local_playlist, parse_playlist_url};
 
 #[derive(FromArgs)]
@@ -22,37 +23,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: ListuiArgs = argh::from_env();
 
-    // Directory where the database and .env file will be located.
-    let mut data_dir = dirs::data_dir().expect("Failed to create data directory.");
-    data_dir.push("listui");
-    create_dir_all(data_dir.clone()).expect("Failed to create data directory.");
-
-    let config_dir = dirs::config_dir();
-    if let Some(mut config_dir) = config_dir {
-        // Parse .env file. If it fails, default values will be used instead.
-        config_dir.push("listui/listui.config");
-        let _ = dotenvy::from_path(config_dir);
-    }
+    // Load config file.
+    let config_path = utils::get_config_path().expect("Failed to get config path.");
+    let _ = dotenvy::from_path(config_path);
     
-    let database_path  =  (|| PathBuf::from(env::var("DATABASE_PATH").ok()?).canonicalize().ok())()
-        .unwrap_or_else(|| {
-            data_dir.push("db.sqlite");
-            data_dir
-        });
+    let log_path = utils::get_log_path().expect("Failed to get log path.");
+    let _ = WriteLogger::init(LevelFilter::Info, Config::default(), File::create(log_path).unwrap());   
 
-    // Directory the downloaded music will the placed.
-    let download_dir  =  (|| PathBuf::from(env::var("DOWNLOAD_DIR").ok()?).canonicalize().ok())()
-        .unwrap_or_else(|| {
-            let mut dir = dirs::audio_dir().expect("Cannot find audio directory.");
-            dir.push("listui");
-            dir       
-        });
+    let database_path = utils::get_db_path().expect("Failed to get database path.");
+    let download_dir = utils::get_download_dir().expect("Failed to get download directory.");
     
+    // Create directory to download all songs (If it does not exist).
     create_dir_all(&download_dir).expect("Failed to create download directory");
 
     let app: Option<ListuiApp> = {
 
-        let dao = Dao::new(&database_path)?;
+        let dao = Database::new(&database_path)?;
         if let Some(arg) = args.playlist.as_ref() {
                         
             let playlist_ytid = parse_playlist_url(arg);

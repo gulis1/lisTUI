@@ -10,6 +10,10 @@ pub enum DownloadResult {
     Failed,
 }
 
+/// Client to download videos from YouTube, using `yt-dlp`.
+/// 
+/// The client keeps track of previously enqueued videos, so
+/// it doesn't download the same video twice. 
 pub struct Downloader {
 
     sem: Arc<Semaphore>,
@@ -24,41 +28,46 @@ pub struct Downloader {
 
     // The id of the last video the user asked to download. This video will
     // have the top priority in the queue.
-    last_download: Mutex<Option<String>> 
+    last_enqueued: Mutex<Option<String>> 
 }
 
 impl Downloader {
 
+    /// Creates a new client that can download up to `max_downloads` simultaneously.
     pub fn new(max_downloads: usize) -> Self {       
         
         Self {
-
             sem: Arc::new(Semaphore::new(max_downloads)),
-            last_download: Mutex::new(None),
+            last_enqueued: Mutex::new(None),
             downloads: Mutex::new(HashSet::new()),
         }
     }
 
+    /// Download a video with a given youtube ID.
+    /// 
+    /// If there are other enqueued videos, the last newly enqueued one will have priority.
     pub async fn download_id(&self, yt_id: &str, file_path: &Path) -> Option<DownloadResult> {
 
         let mut downloads = self.downloads.lock().await; 
-        let mut last_download = self.last_download.lock().await;
+        let mut last_enqueued = self.last_enqueued.lock().await;
         
-        last_download.replace(String::from(yt_id));
+        last_enqueued.replace(String::from(yt_id));
         if downloads.contains(yt_id) {
-            // The video is already in the queue.
+            // Early return if the video is already enqueued.
+            log::info!("Video {yt_id} was already enqueued.");
             return None;
         }
 
+        log::info!("Enqueued video {yt_id}.");
         downloads.insert(String::from(yt_id));
         drop(downloads);
-        drop(last_download);
+        drop(last_enqueued);
 
         let mut permit: SemaphorePermit;
         loop {
             
             permit = self.sem.acquire().await.unwrap();
-            let mut last_download = self.last_download.lock().await;
+            let mut last_download = self.last_enqueued.lock().await;
             if last_download.is_none() {
                 break;
             }
@@ -72,6 +81,7 @@ impl Downloader {
             drop(last_download);          
         }
         
+        log::info!("Starting download for video {yt_id}");
         let child = tokio::process::Command::new("yt-dlp")
             .arg("-x")
             .arg("--audio-format")
@@ -87,14 +97,23 @@ impl Downloader {
             .spawn();
         
         drop(permit);
-
         Some(match child {
-            Err(_) =>  DownloadResult::Failed,
+            // The download did not even start.
+            Err(e) =>  {
+                log::error!("Download for video {yt_id} failed: {e}");
+                DownloadResult::Failed
+            },
             Ok(mut child) => {
                 
-                let exit = child.wait().await;
-                if exit.is_ok() && exit.unwrap().success() { DownloadResult::Completed(file_path.to_path_buf()) }
-                else { DownloadResult::Failed }
+                match child.wait().await.map(|exit| exit.success()) {
+                    Ok(true) => {
+                        log::info!("Download for video {yt_id} completed succesfully.");
+                        DownloadResult::Completed(file_path.to_path_buf())
+                    },
+                    Ok(false) | Err(_) => {
+                        DownloadResult::Failed
+                    }
+                }
             }
         })
     }

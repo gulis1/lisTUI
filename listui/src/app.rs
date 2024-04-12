@@ -1,4 +1,4 @@
-use listui_lib::db::{Dao, DbError};
+use listui_lib::db::{Database, DbError};
 
 use listui_lib::models::{Playlist, Track};
 
@@ -10,7 +10,6 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use std::error::Error;
-use std::io::Stdout;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -29,17 +28,15 @@ use crate::utils::Message;
 
 #[derive(Clone, PartialEq)]
 pub enum CurrentScreen {
-
     Playlists,
     Songs,
     Controls(Box<CurrentScreen>),
     LoadingScreen,
-    ErrorScreen(String, Box<CurrentScreen>)
+    ErrorScreen(String, Box<CurrentScreen>),
 }
 
 #[derive(Clone, Copy)]
 enum SelectionMode {
-
     Follow,
     Manual
 }
@@ -47,7 +44,6 @@ enum SelectionMode {
 pub struct ListuiApp {
 
     runtime: Arc<runtime::Runtime>,
-
     current_screen: CurrentScreen,
     playlists_widget: ListWidget<Playlist>,
     songs_widget: ListWidget<Track>,
@@ -55,19 +51,16 @@ pub struct ListuiApp {
     loading_widget: Option<LoadingWidget>,
     sender: mpsc::Sender<utils::Message>,
     recv: mpsc::Receiver<utils::Message>,
-
-    dao: Option<Dao>,
-
+    database: Option<Database>,
     current_playlist: Option<String>,
     current_song_ind: Option<usize>,
     songs_selmode: SelectionMode,
-
     search_query: String
 }
 
 impl ListuiApp {
 
-    pub fn new(playlist_dir: PathBuf, dao: Dao) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(playlist_dir: PathBuf, dao: Database) -> Result<Self, Box<dyn std::error::Error>> {
         
         
         let (sender, recv) = mpsc::channel::<utils::Message>(5);
@@ -87,7 +80,7 @@ impl ListuiApp {
             sender,
             recv,
             
-            dao: Some(dao),
+            database: Some(dao),
 
             current_playlist: None,
             current_song_ind: None,
@@ -97,7 +90,7 @@ impl ListuiApp {
         })
     }
 
-    pub fn new_open_playlist(playlist_dir: PathBuf, dao: Dao, yt_id: String) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new_open_playlist(playlist_dir: PathBuf, dao: Database, yt_id: String) -> Result<Self, Box<dyn std::error::Error>> {
 
         let mut app = ListuiApp::new(playlist_dir, dao)?;
         app.fetch_new_playlist(yt_id);
@@ -126,7 +119,7 @@ impl ListuiApp {
             sender,
             recv,
             
-            dao: None,
+            database: None,
 
             current_playlist: Some(playlist_name),
             current_song_ind: None,
@@ -196,14 +189,14 @@ impl ListuiApp {
 
                 Message::PlaylistUpdate(Ok((playlist_id, tracks))) => {
                     
-                    self.dao.as_ref().expect("No connection to database.").replace_tracks(playlist_id, tracks)?;
+                    self.database.as_ref().expect("No connection to database.").replace_tracks(playlist_id, tracks)?;
                     self.current_screen = CurrentScreen::Playlists;
                     Ok(())
                 },
 
                 Message::NewPlaylist(Ok((new_playlist, tracks))) => {
                     
-                    let dao = self.dao.as_ref().expect("No connection to database.");
+                    let dao = self.database.as_ref().expect("No connection to database.");
                     let playlist = dao.save_playlist(new_playlist)?;
                     dao.save_tracks(tracks, playlist.id)?;              
                     self.current_screen = CurrentScreen::Playlists;
@@ -212,6 +205,12 @@ impl ListuiApp {
                     Ok(())
                 },
 
+                Message::DownloadProgress(message) => {
+                    if let Some(widget) = &mut self.loading_widget {
+                        widget.change_label(message);
+                    }
+                    Ok(())
+                },
                 Message::PlaylistUpdate(error) => error.map(|(_, _)| Ok(()))?,
                 Message::NewPlaylist(error) => error.map(|(_, _)| Ok(()))?
             };
@@ -223,7 +222,7 @@ impl ListuiApp {
     fn load_songs(&mut self, playlist_id: i32) -> Result<(), DbError> {
         
         // Loads from the DB all tracks of the playlist with the given id.
-        if let Some(ref dao) = self.dao {
+        if let Some(ref dao) = self.database {
             let playlist = dao.get_playlist(playlist_id)?;
             let songs = dao.get_tracks(playlist_id)?;
             self.songs_widget = ListWidget::with_items(&playlist.title, songs);
@@ -234,7 +233,7 @@ impl ListuiApp {
         else { Err(DbError::ConnectionError) }
     }
 
-    fn draw(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>) {
+    fn draw(&mut self, frame: &mut Frame) {
         
         if frame.size().width < 25{ widgets::draw_error_msg(frame, "-->(x_x)<--"); }
         else if frame.size().height < 10 { widgets::draw_error_msg(frame,"Please make the terminal a bit taller :(") }
@@ -248,13 +247,13 @@ impl ListuiApp {
         }}; 
     }
 
-    fn draw_loading_screen(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn draw_loading_screen(&mut self, frame: &mut Frame, area: Rect) {
         if let Some(widget) = self.loading_widget.as_mut() {
             widget.draw(frame, area);
         }
     }
 
-    fn draw_playlists(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn draw_playlists(&mut self, frame: &mut Frame, area: Rect) {
         
         if area.height < 20 || area.width < 50 {
             self.playlists_widget.draw(frame, area);
@@ -271,7 +270,7 @@ impl ListuiApp {
         }
     }
 
-    fn draw_songs(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn draw_songs(&mut self, frame: &mut Frame, area: Rect) {
 
         let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -356,7 +355,7 @@ impl ListuiApp {
                             'q' => {
                                 self.close_playlist();
                                 // Terminate the app if it was playing a local playlist.
-                                if self.dao.is_none() { return Ok(true); }
+                                if self.database.is_none() { return Ok(true); }
                             
                             },
                             'h' => { self.current_screen = CurrentScreen::Controls(Box::new(self.current_screen.clone())); },
@@ -401,7 +400,7 @@ impl ListuiApp {
 
     fn delete_playlist(&mut self, ind: usize) -> Result<(), DbError> {
         
-        let dao = self.dao.as_ref().expect("No connection to database.");
+        let dao = self.database.as_ref().expect("No connection to database.");
         dao.delete_playlist(self.playlists_widget.get_ind(ind).id)?;
         let playlists = dao.get_playlists()?;
         self.playlists_widget = ListWidget::with_items("Playlists (press h for help)", playlists);
@@ -412,12 +411,28 @@ impl ListuiApp {
     fn fetch_new_playlist(&mut self, yt_id: String) {
  
         let sender = self.sender.clone();
-        
-        self.loading_widget = Some(LoadingWidget::new("Fetching playlist..."));
+
+        // Callback that will be called.
+        let runtime = self.runtime.clone();
+        let progress_callback = Box::new(move |message| {
+            let sender = sender.clone();
+            runtime.spawn(
+                async move { 
+                    let _ = sender.send(Message::DownloadProgress(message)).await; 
+                });
+        });
+
+        // Show download screen.
+        self.loading_widget = Some(LoadingWidget::new("Updating playlist..."));
         self.current_screen = CurrentScreen::LoadingScreen;
+
+        let sender = self.sender.clone();
         self.runtime.spawn(async move {
             
-            let result = utils::get_youtube_playlist(&yt_id).await;
+            let result = utils::get_youtube_playlist(
+                &yt_id,
+                Some(progress_callback)      
+            ).await;
             match result {
                 Ok((playlist, videos)) => sender.send(utils::Message::NewPlaylist(Ok((playlist, videos)))).await,
                 Err(e) => sender.send(utils::Message::PlaylistUpdate(Err(e))).await
@@ -427,14 +442,29 @@ impl ListuiApp {
 
     fn update_playlist(&mut self, ind: usize) {
  
-        let sender = self.sender.clone();
         let playlist = self.playlists_widget.get_ind(ind).clone();
-        
+        let sender = self.sender.clone();
+
+        // Callback that will be called.
+        let runtime = self.runtime.clone();
+        let progress_callback = Box::new(move |message| {
+            let sender = sender.clone();
+            runtime.spawn(async move { 
+                let _ = sender.send(Message::DownloadProgress(message)).await; 
+            });
+        });
+
+        // Show download screen.
         self.loading_widget = Some(LoadingWidget::new("Updating playlist..."));
         self.current_screen = CurrentScreen::LoadingScreen;
+
+        let sender = self.sender.clone();
         self.runtime.spawn(async move {
             
-            let result = utils::get_youtube_playlist(&playlist.yt_id).await;
+            let result = utils::get_youtube_playlist(
+                &playlist.yt_id,
+                Some(progress_callback)      
+            ).await;
             match result {
                 Ok((_, videos)) => sender.send(utils::Message::PlaylistUpdate(Ok((playlist.id, videos)))).await,
                 Err(e) => sender.send(utils::Message::PlaylistUpdate(Err(e))).await

@@ -1,17 +1,17 @@
-use std::fs::read_dir;
-use std::path::Path;
+use std::fs::{create_dir_all, read_dir};
+use std::path::{Path, PathBuf};
 use listui_lib::models::{Track, NewVideo, NewPlaylist};
-use listui_lib::api::{ApiClient, ApiError};
+use listui_lib::api::{ApiClient, ApiError, ApiProgressCallback};
 use regex::Regex;
 use std::env;
 use std::process::{Command, Stdio};
 
 #[derive(Debug)]
 pub enum Message {
-
     SongFinished,
     NewPlaylist(Result<(NewPlaylist, Vec<NewVideo>), ApiError>),
-    PlaylistUpdate(Result<(i32, Vec<NewVideo>), ApiError>)
+    PlaylistUpdate(Result<(i32, Vec<NewVideo>), ApiError>),
+    DownloadProgress(String)
 }
 
 #[derive(Debug)]
@@ -31,17 +31,17 @@ pub fn parse_playlist_url(url: &str) -> Option<String> {
 }
 
 // On success, returns the id of the new playlist stored in the DB.
-pub async fn get_youtube_playlist(playlist_id: &str) -> Result<(NewPlaylist, Vec<NewVideo>), ApiError> {
+pub async fn get_youtube_playlist(playlist_id: &str, callback: Option<ApiProgressCallback>) -> Result<(NewPlaylist, Vec<NewVideo>), ApiError> {
 
     let yt_api_key = env::var("YT_API_KEY");
     let client = match yt_api_key {
         Ok(key) => {
             // if print_messages { println!("Fetching videos from YouTube api...") };
-            ApiClient::from_youtube(key)
+            ApiClient::from_youtube(key, callback)
         },
         Err(_) => {
             // if print_messages { println!("Fetching videos from Invidious api. This can take up to a few minutes.") };
-            ApiClient::from_invidious()
+            ApiClient::from_invidious(callback)
         }
     };
     let (playlist, videos) = client.fetch_playlist(playlist_id).await?;
@@ -115,3 +115,56 @@ pub fn probe_ffmpeg() -> bool {
 
     child.is_ok()
 }
+
+/// Directory where the data will be stored.
+fn get_data_dir() -> PathBuf {
+       let mut data_dir = dirs::data_dir().expect("Failed to create data directory.");
+       data_dir.push("listui");
+       create_dir_all(data_dir.clone()).expect("Failed to create data directory.");
+       data_dir
+}
+
+pub fn get_log_path() -> Option<PathBuf> {
+
+    match env::var("LOG_PATH") {
+        Ok(var) => PathBuf::from(var).canonicalize().ok(),
+        Err(_) => {
+            let mut data_dir = get_data_dir();
+            data_dir.push("log.txt");
+            Some(data_dir)
+        }
+    }
+}
+
+pub fn get_db_path() -> Option<PathBuf> {
+
+    match env::var("DATABASE_PATH") {
+        Ok(var) => PathBuf::from(var).canonicalize().ok(),
+        Err(_) => {
+            let mut data_dir = get_data_dir();
+            data_dir.push("db.sqlite");
+            Some(data_dir)
+        }
+    }
+}
+
+pub fn get_download_dir() -> Option<PathBuf> {
+
+    match env::var("DOWNLOAD_DIR") {
+        Ok(var) => PathBuf::from(var).canonicalize().ok(),
+        Err(_) => {
+            let mut audio_dir = dirs::audio_dir().expect("Failed to get audio directory.");
+            audio_dir.push("listui");
+            create_dir_all(audio_dir.clone()).expect("Failed to create data directory.");
+            Some(audio_dir)
+        }
+    }
+}
+
+pub fn get_config_path() -> Option<PathBuf> {
+    let mut config_dir = dirs::config_dir()?;
+    config_dir.push("listui/listui.config");
+    Some(config_dir)
+}
+
+

@@ -1,3 +1,8 @@
+/// Module with structs for Invidious's API.
+
+mod yt_api;
+mod invidious_api;
+
 use reqwest::{self, Response};
 use crate::models::{NewPlaylist, NewVideo};
 
@@ -12,7 +17,7 @@ static INVIDIOUS_INSTANCES: [&str; 5] =  [
     "https://inv.bp.projectsegfau.lt"
 ];
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ApiError {
     
     NotFoundError(String),
@@ -34,118 +39,80 @@ impl std::fmt::Display for ApiError {
     }
 }
 
-// Modules that contain serde structs for each api response.
-mod yt_api {
+pub type ApiProgressCallback = Box<dyn Fn(String) + Send + Sync>;
 
-    use serde::{Serialize, Deserialize};
-
-    #[derive(Serialize, Deserialize, Debug)]
-    #[serde(rename_all = "camelCase")]
-    pub struct PageInfo {
-        pub total_results: i32,
-        pub results_per_page: i32
-    }
-    
-    #[derive(Serialize, Deserialize, Debug)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ResourceId {
-        pub kind: String,
-        pub video_id: String
-    }
-
-    #[derive(Serialize, Deserialize, Debug)]
-    #[serde(rename_all = "camelCase")]
-    pub struct Snippet {
-        pub title: String,
-        pub resource_id: Option<ResourceId>
-    }
-
-    #[derive(Serialize, Deserialize, Debug)]
-    pub struct Item {
-        pub snippet: Snippet,
-        pub id: String
-    }
-
-    #[derive(Serialize, Deserialize, Debug)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ApiResponse {
-        pub page_info: PageInfo,
-        pub items: Vec<Item>,
-        pub next_page_token: Option<String>
-    }
-}
-
-mod invidious_api {
-
-    use serde::{Serialize, Deserialize};
-
-    #[derive(Serialize, Deserialize, Debug)]
-    #[serde(rename_all = "camelCase")]
-    pub struct Video {
-
-        pub title: String,
-        pub video_id: String,
-        pub index: i32
-    }
-
-    #[derive(Serialize, Deserialize, Debug)]
-    #[serde(rename_all = "camelCase")]
-    pub struct PlaylistResponse {
-        pub title: String,
-        pub playlist_id: String,
-        pub videos: Vec<Video>,
-    }
-}    
-
-// All requests to Youtube's or Invidious' api are made here.
+/// A `reqwest::Client` wrapper, that can query videos either from ỲouTube
+/// or Invidious.
+/// 
+/// Because playlist queries can take a quite a while, the user can define a callback
+/// function that will be called multiple times with a `String` with information
+/// about the progress.
 pub struct ApiClient {
-
     client: reqwest::Client,
     api_key: Option<String>,
+    callback: Option<ApiProgressCallback>
 }
 
 impl ApiClient {
 
-    pub fn from_youtube(api_key: String) -> Self {
+    /// Crates a new YouTube client.
+    /// 
+    /// If a callback is provided, it will be called multiple times with information
+    /// about the progress.
+    pub fn from_youtube(api_key: String, callback: Option<ApiProgressCallback>) -> Self {
 
         Self {
             client: reqwest::Client::new(),
-            api_key: Some(api_key)
+            api_key: Some(api_key),
+            callback
         }
     }
 
-    pub fn from_invidious() -> Self {
+    /// Crates a new Invidious client.
+    /// 
+    /// If a callback is provided, it will be called multiple times with information
+    /// about the progress.
+    pub fn from_invidious(callback: Option<ApiProgressCallback>) -> Self {
 
         Self {
             client: reqwest::Client::new(),
-            api_key: None
+            api_key: None,
+            callback
         }
     }
-   
+    
+    /// Tries to fetch the information about all videos from a YouTube playlist.
+    /// 
+    /// Depending if `self` was created using `Self::from_youtube` or `Self::from_invidious`, 
+    /// the information will be fetched from either YouTube or Invidious.
     pub async fn fetch_playlist(&self, yt_id: &str) -> Result<(NewPlaylist, Vec<NewVideo>), ApiError> {
 
-        match self.api_key {
-            Some(_) => {
-                let playlist = self.fetch_youtube_playlist_info(yt_id).await?;
-                let videos = self.fetch_youtube_videos(&playlist.yt_id).await?;
-                Ok((playlist, videos))
-            },
-            None => {
-                // Loop through invidious instances, in case some of them are down.
-                let mut r: Result<(NewPlaylist, Vec<NewVideo>), ApiError> = Err(ApiError::Unknown);
-                for i in INVIDIOUS_INSTANCES {
-                    r = self.fetch_invidious_playlist(i, yt_id).await;
-                    if r.is_ok() { break }
+        if self.api_key.is_some() {
+            self.send_callback(format!("Fetching playlist {yt_id} from YouTube."));
+            let playlist = self.fetch_youtube_playlist_info(yt_id).await?;
+            let videos = self.fetch_youtube_videos(&playlist.yt_id).await?;
+            Ok((playlist, videos))
+        }
+        else {
+            // Loop through invidious instances, in case some of them are down.
+            let mut r: Result<(NewPlaylist, Vec<NewVideo>), ApiError> = Err(ApiError::Unknown);
+            for instance in INVIDIOUS_INSTANCES {
+                self.send_callback(format!("Fetching playlist {yt_id} from Invidious instance: {instance}"));
+                r = self.fetch_invidious_playlist(instance, yt_id).await;
+                match &r {
+                    Ok(_) => break,
+                    Err(e) => self.send_callback(format!("Cloud not fetch playlist {yt_id} from {instance}: {e}"))    
                 }
-
-                r       
             }
+            r   
         }
     }
 
+    /// Gets a playlist's title using Youtube's API.
     async fn fetch_youtube_playlist_info(&self,  yt_id: &str) -> Result<NewPlaylist, ApiError> {
 
-        let response = self.client.get(format!("{}/playlists?part=snippet&key={}&id={}", YOUTUBE_API_URL, self.api_key.as_ref().unwrap(), yt_id)).send().await
+        let response = self.client.get(format!("{}/playlists?part=snippet&key={}&id={}", YOUTUBE_API_URL, self.api_key.as_ref().unwrap(), yt_id))
+            .send().await
             .map_err(convert_reqwest_err)?;
     
         let mut content = parse_youtube_response(response).await?;
@@ -160,19 +127,25 @@ impl ApiClient {
         else { Err(ApiError::NotFoundError(String::from(yt_id))) }
     }
 
+    /// Gets information about all songs in a playlist, using Youtube's API.
     async fn fetch_youtube_videos(&self, playlist_ytid: &str) -> Result<Vec<NewVideo>, ApiError> {
-        // Fetches all videos from the given youtube playlist.
 
         let mut videos: Vec<NewVideo> = Vec::new();
         let mut next_page_token: Option<String> = None;
         loop {
             
-            let mut url = format!("{}/playlistItems?maxResults=50&part=snippet&key={}&playlistId={}", YOUTUBE_API_URL, self.api_key.as_ref().unwrap(), playlist_ytid);
+            let mut url = format!("{}/playlistItems?maxResults=50&part=snippet&key={}&playlistId={}", 
+                YOUTUBE_API_URL,
+                self.api_key.as_ref().unwrap(), 
+                playlist_ytid
+            );
+
             if let Some(token) = next_page_token {
                 url.push_str(&format!("&pageToken={token}"));
             }
 
-            let response = self.client.get(url).send().await
+            let response = self.client.get(url)
+                .send().await
                 .map_err(convert_reqwest_err)?;
 
             let content = parse_youtube_response(response).await?;
@@ -186,6 +159,8 @@ impl ApiClient {
                     })
                 })
             );
+
+            self.send_callback(format!("Fetched {} videos.", videos.len()));
  
             next_page_token = content.next_page_token;
             if next_page_token.is_none() { break; }
@@ -194,6 +169,7 @@ impl ApiClient {
         Ok(videos)
     }
 
+    /// Gets both a playlist's title and all its videos using Youtube's API.
     async fn fetch_invidious_playlist(&self, instance: &str, yt_id: &str) -> Result<(NewPlaylist, Vec<NewVideo>), ApiError> {
         
         let mut videos: Vec<NewVideo> = Vec::new();
@@ -217,7 +193,8 @@ impl ApiClient {
             // Invidious api paging is a bit weird, and it can return the same videos in multiple pages.
             // To prevent saving the same video multiple times, the index of the last song in the previous
             // query is saved, and then it's used to filter the videos in the next query.
-            let x = content.videos.last().unwrap().index;     
+            let x = content.videos.last().unwrap().index;  
+
             videos.extend(content.videos.into_iter()
             .filter(|v| v.index > last_index && v.title != "[Deleted video]" && v.title  != "[Private video]")
             .map(|v| {
@@ -227,12 +204,21 @@ impl ApiClient {
                     playlist_id: None
                 }
             }));
-            
+
+            self.send_callback(format!("Fetched {} videos.", videos.len()));
+
             last_index = x;
             page += 1;
         }
 
         Ok((playlist, videos))
+    }
+
+    fn send_callback(&self, progress: String) {
+        log::info!("{progress}");
+        if let Some(callback) = &self.callback {
+            callback(progress);
+        }
     }
 }
 

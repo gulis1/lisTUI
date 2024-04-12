@@ -116,7 +116,6 @@ impl Player {
         if let (Some(handle), Some(progress)) = (handle, progress) {
             
             let sl = self.sl.borrow();
-            let progress = progress;
 
             if progress > seconds {
                 let newpos = progress - seconds;

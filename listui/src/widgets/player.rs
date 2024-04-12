@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::path::{PathBuf, Path};
 use std::ffi::OsStr;
 use std::time::Duration;
-use std::io::Stdout;
 
 use listui_lib::downloader::DownloadResult;
 use listui_lib::player::WavWrapper;
@@ -12,7 +11,7 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::sync::MutexGuard;
 use tokio::{runtime, task::JoinHandle, sync::{Mutex, mpsc}, time::sleep};
-use ratatui::{Frame, backend::CrosstermBackend, layout::{Rect, Layout, Direction, Constraint}, widgets::{Gauge, Borders, Paragraph}, style::Style};
+use ratatui::{Frame, layout::{Rect, Layout, Direction, Constraint}, widgets::{Gauge, Borders, Paragraph}, style::Style};
 
 use crate::utils;
 
@@ -129,7 +128,7 @@ impl PlayerWidget {
         });
     }
 
-    pub fn draw(&mut self, frame: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
        
         let data_guard = self.data.blocking_lock();
 

@@ -20,7 +20,8 @@ pub enum DbError {
     UnknownError,
     UniqueViolation,
     NotFoundError,
-    ConnectionError
+    ConnectionError,
+    MigrationError
 }
 
 impl std::error::Error for DbError {}
@@ -33,33 +34,37 @@ impl std::fmt::Display for DbError {
             DbError::UniqueViolation => write!(f, "Playlist already present."),
             DbError::NotFoundError => write!(f, "Item not found."),
             DbError::ConnectionError => write!(f, "Failed to connect to database."),
+            DbError::MigrationError =>  write!(f, "Failed to run database migrations."),
         }
     }
 }
 
-fn run_migrations(connection: &mut SqliteConnection) {
+fn run_migrations(connection: &mut SqliteConnection) -> Result<(), DbError> {
+    connection.run_pending_migrations(MIGRATIONS)
+        .map_err(|_| DbError::MigrationError)?;
 
-    connection.run_pending_migrations(MIGRATIONS).unwrap();
+    Ok(())
 }
 
 // Struct used to communicate with the sqlite database.
-pub struct Dao {
-
+pub struct Database {
     connection: RefCell<SqliteConnection>,
 }
 
-impl Dao {
+impl Database {
 
+    /// Creates a new SQlite database connection.
     pub fn new(database_path: &Path) -> Result<Self, DbError> {
         
         let mut connection = SqliteConnection::establish(&database_path.as_os_str().to_string_lossy()).map_err(|_| DbError::ConnectionError)?;
-        run_migrations(&mut connection);
+        run_migrations(&mut connection)?;
 
-        Ok(Dao {
+        Ok(Database {
             connection: RefCell::new(connection)
         })
     }
-
+    
+    /// Gets all the playlists from the database.
     pub fn get_playlists(&self) -> Result<Vec<Playlist>, DbError> {
 
         PlaylistTable::table
@@ -67,6 +72,7 @@ impl Dao {
         .map_err(convert_err)
     }
 
+    /// Gets a playlist from the database given its ID.
     pub fn get_playlist(&self, playlist_id: i32) -> Result<Playlist, DbError> {
 
         PlaylistTable::table
@@ -75,6 +81,7 @@ impl Dao {
         .map_err(convert_err)
     }
 
+    /// Saves a playlist into the database.
     pub fn save_playlist(&self, plist: NewPlaylist) -> Result<Playlist, DbError> {
 
         let result = diesel::insert_into(PlaylistTable::table)
@@ -90,6 +97,7 @@ impl Dao {
         }).map_err(convert_err)
     }
 
+    /// Deletes a playlist from the database.
     pub fn delete_playlist(&self, playlist_id: i32) -> Result<(), DbError> {
 
         
@@ -110,6 +118,7 @@ impl Dao {
         }
     }
 
+    /// Gets all tracks from a playlist.
     pub fn get_tracks(&self, playlist_id: i32) -> Result<Vec<Track>, DbError> {
 
         let result: Result<Vec<Track>, DieselError> = TrackTable::table
@@ -120,6 +129,7 @@ impl Dao {
 
     }
 
+    /// Saves new tracks for a playlist, without deleting previous ones.
     pub fn save_tracks(&self, mut videos: Vec<NewVideo>, playlist_id: i32) -> Result<(), DbError> {
 
         for vid in &mut videos {
@@ -132,6 +142,7 @@ impl Dao {
             .map(|_| ()).map_err(convert_err)
     }
 
+    /// Deletes all tracks from a playlist, and then saves the new ones.
     pub fn replace_tracks(&self, playlist_id: i32,  videos: Vec<NewVideo>) -> Result<(), DbError> {
         // Removes all tracks asociated with a playlists and inserts the new ones.
 
@@ -146,7 +157,6 @@ impl Dao {
 fn convert_err(err: DieselError) -> DbError {
 
     match err {
-
         DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => DbError::UniqueViolation,
         _ => DbError::UnknownError   
     }
