@@ -1,195 +1,140 @@
-use std::cell::RefCell;
+use std::fmt::Debug;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::{fs::File, time::Duration};
+use std::io::BufReader;
 use std::path::Path;
-use soloud::*;
+use rodio::{Decoder, OutputStream, Source, Sink};
+use thiserror::Error;
 
-#[derive(Debug)]
-pub struct WavWrapper(pub Wav);
 
-unsafe impl Send for WavWrapper {}
-impl Default for WavWrapper {
-    fn default() -> Self {
-        Self(Wav::default())
-    }
+#[derive(Error, Debug)]
+pub enum PlayerError {
+    #[error("Failed to create audio output stream: {0}")]
+    StreamError(#[from] rodio::StreamError),
+    #[error("I/O error: {0}")]
+    IOError(#[from] std::io::Error),
+    #[error("Decoding error: {0}")]
+    DecodingError(#[from] rodio::decoder::DecoderError),
 }
 
-
-#[derive(Debug)]
 pub struct Player {
 
-    sl: RefCell<Soloud>,
-    current_handle: RefCell<Option<Handle>>,
-    wav: RefCell<WavWrapper>
-
+    sink: Sink,
+    current_track_duration: AtomicU64
 }
 
-impl Default for Player {
-
-    fn default() -> Self {
-
-        Self {
-            sl: RefCell::new(Soloud::default().expect("Unable to initialize soloud engine.")),
-            current_handle: RefCell::new(None),
-            wav: RefCell:: new(WavWrapper::default())
-        }
+impl Debug for Player {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
     }
 }
-
 
 impl Player {
 
-    pub fn play_file(&self, path: &Path) -> Result<(), SoloudError> {
+    pub fn try_default() -> Result<Self, PlayerError> {
         
-        let wav = Wav::from_path(path)?;
-        let handle = self.sl.borrow_mut().play(&wav);
-        self.current_handle.replace(Some(handle));
-        self.wav.replace(WavWrapper(wav));
-
-        Ok(())
+        let (stream, stream_handle) = OutputStream::try_default()?;
+        let sink = Sink::try_new(&stream_handle).unwrap();
+        std::mem::forget(stream);
+        Ok(Self {
+            sink,
+            current_track_duration: AtomicU64::new(0)
+        })
     }
 
-    pub fn play_wav(&self, wav: WavWrapper) -> Result<(), SoloudError> {
-
-        let handle = self.sl.borrow_mut().play(&wav.0);
-        self.current_handle.replace(Some(handle));
-        self.wav.replace(wav);
-
+    pub fn play_file(&self, path: &Path) -> Result<(), PlayerError> {
+        
+        self.stop();
+        let file = BufReader::new(File::open(path)?);
+        let source = Decoder::new(file)?;
+        self.current_track_duration.store(source.total_duration().unwrap().as_secs(), Ordering::SeqCst);
+        self.sink.append(source);
+   
         Ok(())
     }
 
     pub fn is_playing(&self) -> bool {
-        
-        let handle = self.current_handle.borrow();
-        match *handle {
-            Some(h) => self.sl.borrow().is_valid_voice_handle(h),
-            None => false
-        }
+        // WARNING
+        !self.sink.empty()
     }
 
     pub fn is_paused(&self) -> bool {
-        
-        let handle = self.current_handle.borrow();
-        match *handle {
-            Some(h) => self.sl.borrow().pause(h),
-            None => false,
-        } 
+        self.sink.is_paused()
     }
 
     pub fn seek(&self, seconds: u64) {
-
-        let handle = self.current_handle.borrow();
-        if let Some(handle) = *handle {
-            self.sl.borrow().seek(handle, seconds as f64).expect("Seek error.");
-        }
+        self.sink.try_seek(Duration::from_secs(seconds)).expect("Failed to seek");
     }
 
     pub fn seek_percentage(&self, percentage: u64) {
-
-        let handle = self.current_handle.borrow();
-        if let Some(handle) = *handle {
-            let time = (percentage as f64 / 100.0) * self.get_duration() as f64;
-            self.sl.borrow().seek(handle, time).expect("Seek error.");
-        }
+        
+        let time = percentage * self.get_duration() / 100;
+        self.sink.try_seek(Duration::from_secs(time as u64)).expect("Failed to seek");
     }
 
     pub fn forward(&self, seconds: u64) {
-
-        let handle = *self.current_handle.borrow();
-        let progress = self.get_progress();
-
-        if let (Some(handle), Some(progress)) = (handle, progress) {
-
-            let sl = self.sl.borrow();
+        
+        if let Some(progress) = self.get_progress() {
             let newpos = progress + seconds;
-
-            if newpos < self.get_duration() {
-                sl.seek(handle, newpos as f64).expect("Seek error.");
-            }
-            else { self.stop(); }
+            self.sink.try_seek(Duration::from_secs(newpos)).expect("Failed to seek");
         }
     }
 
     pub fn rewind(&self, seconds: u64) {
-
-        let handle = *self.current_handle.borrow();
-        let progress = self.get_progress();
-
-        if let (Some(handle), Some(progress)) = (handle, progress) {
-            
-            let sl = self.sl.borrow();
-
+    
+        if let Some(progress) = self.get_progress() {
             if progress > seconds {
                 let newpos = progress - seconds;
-                sl.seek(handle, newpos as f64).expect("Seek error.");
+                self.sink.try_seek(Duration::from_secs(newpos)).expect("Failed to seek");
             }
-
             else { 
-                sl.seek(handle, 0.0).expect("Seek error.");
+                self.sink.try_seek(Duration::from_secs(0)).expect("Failed to seek");
             }
         }
     }
 
     pub fn pause(&self) {
-        
-        let handle = self.current_handle.borrow();
-        if let Some(handle) = *handle {
-            self.sl.borrow_mut().set_pause(handle, true);
-        }
+        self.sink.pause();
     }
 
     pub fn resume(&self) {
-        
-        let handle = self.current_handle.borrow();
-        if let Some(handle) = *handle {
-            self.sl.borrow_mut().set_pause(handle, false);
-        }
+        self.sink.play();    
     }
 
     pub fn get_progress(&self) -> Option<u64> {
-
-        let handle = self.current_handle.borrow();
-        handle.map(|h| self.sl.borrow().stream_position(h) as u64)
+    
+        if self.sink.len() > 0 {
+            Some(self.sink.get_pos().as_secs())
+        }
+        else {
+            None
+        }
     }
 
     pub fn get_duration(&self) -> u64 {
-        self.wav.borrow().0.length() as u64
-    }
-
-    pub fn set_repeat(&self, value: bool) {
-
-        let handle = self.current_handle.borrow();
-        if let Some(handle) = *handle {
-            self.sl.borrow_mut().set_looping(handle, value);
-        }
+        self.current_track_duration.load(Ordering::SeqCst)
     }
 
     pub fn increase_volume(&self, volume_inc: i32) {
 
-        let mut sl =  self.sl.borrow_mut();
-        
-        let mut new_volume = sl.global_volume() + (volume_inc as f32 / 100.0);
-        if new_volume > 3.0 { new_volume = 3.0; } 
-        sl.set_global_volume(new_volume);
+        let mut new_volume = self.sink.volume() + (volume_inc as f32 / 100.0);
+        if new_volume > 2.0 { new_volume = 2.0; } 
+        self.sink.set_volume(new_volume);
     }
 
     pub fn decrease_volume(&self, volume_inc: i32) {
 
-        let mut sl =  self.sl.borrow_mut();
-        
-        let mut new_volume = sl.global_volume() - (volume_inc as f32 / 100.0);
+        let mut new_volume = self.sink.volume() - (volume_inc as f32 / 100.0);
         if new_volume < 0.0 { new_volume = 0.0; }
-        sl.set_global_volume(new_volume);
+        self.sink.set_volume(new_volume);
     }
 
     pub fn get_volume(&self) -> i32 {
-        (100.0 * self.sl.borrow().global_volume()).round() as i32
+        (100.0 * self.sink.volume()).round() as i32
     }
 
     pub fn stop(&self) {
-        let mut handle = self.current_handle.borrow_mut();
-        if let Some(handle) = *handle {
-            self.sl.borrow().stop(handle);
-        }
-
-        handle.take();
+        self.current_track_duration.store(0, Ordering::SeqCst);
+        self.sink.stop();
     }
 }
