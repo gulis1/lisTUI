@@ -6,8 +6,12 @@
 
 ### Improvements:
 
+- Changed the audio library to rodio. Much faster song loading times.
 - Added logs (by default, they are stored in a file in the same path as the database). This will hopefully be very useful to debug future bugs.
 
+### Bug fixes:
+
+- Search did not work when using caps.
 
 # 0.2.3
 

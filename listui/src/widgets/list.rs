@@ -111,11 +111,14 @@ impl<T: Drawable> ListWidget<T> {
 
         // self.last_query cannot be none is self.filtered is true
         // so using unwrap shuold be safe here.
-        if !self.is_filtered() || self.last_query.as_ref().unwrap() != query {
+        //
+        
+        let query = query.to_lowercase();
+        if !self.is_filtered() || self.last_query.as_ref().unwrap() != &query {
 
             self.filtered_indexes = self.ordered_items.iter()
                 .enumerate()
-                .filter(|(_, i)| self.items[**i].get_text().to_ascii_lowercase().contains(query))
+                .filter(|(_, i)| self.items[**i].get_text().to_ascii_lowercase().contains(&query))
                 .map(|(ind, _)| ind)
                 .collect();
 

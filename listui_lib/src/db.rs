@@ -25,7 +25,6 @@ pub enum DbError {
 }
 
 impl std::error::Error for DbError {}
-
 impl std::fmt::Display for DbError {
     
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

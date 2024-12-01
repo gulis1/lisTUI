@@ -1,6 +1,6 @@
 [package]
 name = "listui"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 description = "A simple music player for the terminal, written in Rust. "
 license = "GPL-3.0"
@@ -11,7 +11,7 @@ categories = ["command-line-utilities", "multimedia", "multimedia::audio"]
 keywords = ["music", "playlist", "music_player", "terminal", "youtube"]
 
 [dependencies]
-listui_lib = { path = "../listui_lib", version="0.2.0" }
+listui_lib = { path = "../listui_lib", version="0.3.0" }
 ratatui = "0.26.1"
 crossterm = "0.27.0"
 dotenvy = "0.15"
@@ -24,3 +24,4 @@ soloud = "1.0.2"
 regex = "1"
 lazy_static = "1.4.0"
 simplelog = "0.12.2"
+anyhow = "1.0.93"
