@@ -69,7 +69,7 @@ impl Player {
     pub fn seek_percentage(&self, percentage: u64) {
         
         let time = percentage * self.get_duration() / 100;
-        self.sink.try_seek(Duration::from_secs(time as u64)).expect("Failed to seek");
+        self.sink.try_seek(Duration::from_secs(time)).expect("Failed to seek");
     }
 
     pub fn forward(&self, seconds: u64) {

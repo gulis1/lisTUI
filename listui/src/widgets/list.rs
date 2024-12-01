@@ -123,7 +123,7 @@ impl<T: Drawable> ListWidget<T> {
                 .collect();
 
             self.filter_state = ListState::default();
-            self.last_query = Some(String::from(query));
+            self.last_query = Some(query);
         }    
     }
 

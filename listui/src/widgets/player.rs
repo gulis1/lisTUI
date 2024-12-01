@@ -98,11 +98,8 @@ impl PlayerWidget {
                 if let Err(_e) = player.play_file(&path) {
                     // TODO: log error
                     sender.send(utils::Message::SongFinished).await.expect("Failed to send message.");
-                    return;
                 }
-                else {
-                    set_timer(&player, &runtime, &mut data_guard, sender);
-                }
+                else { set_timer(&player, &runtime, &mut data_guard, sender); }
             }
         });
     }
@@ -132,7 +129,11 @@ impl PlayerWidget {
                     let duration = self.player.get_duration() as i32;
                     if duration != 0 {
                         let label = utils::time_str(progress as i32, duration, self.player.is_paused());
-                        let ratio = progress as f64 / duration as f64;
+                        let mut ratio = progress as f64 / duration as f64;
+                        // Ugly fix. On some execution branches duration gets updated before progress is reset??
+                        if ratio > 1.0 {
+                            ratio = 0.0;
+                        }
                         (label, ratio)
                     }
                     else { (String::new(), 0.0) }
