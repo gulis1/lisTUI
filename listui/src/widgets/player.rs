@@ -94,12 +94,13 @@ impl PlayerWidget {
                 data_guard.downloading = false;
                 player.stop();
                 if let Some(timer) = data_guard.end_timer.take() { timer.abort(); }
-                
                 if let Err(_e) = player.play_file(&path) {
                     // TODO: log error
                     sender.send(utils::Message::SongFinished).await.expect("Failed to send message.");
                 }
-                else { set_timer(&player, &runtime, &mut data_guard, sender); }
+                else {
+                    set_timer(&player, &runtime, &mut data_guard, sender, 1);
+                }
             }
         });
     }
@@ -120,15 +121,16 @@ impl PlayerWidget {
 
         let (label, ratio) = {
             
-            match self.player.get_progress() {
-                None => {
+            match (self.player.get_progress(), self.player.get_duration()) {
+                (None, _) | (_, None) => {
                     if data_guard.downloading { (String::from("Downloading..."), 0.0) }
                     else { (String::new(), 0.0) }
                 },
-                Some(progress) => {
-                    let duration = self.player.get_duration() as i32;
+                (Some(progress), Some(duration)) => {
+                    let duration = duration as i32;
+                    let progress = progress as i32;
                     if duration != 0 {
-                        let label = utils::time_str(progress as i32, duration, self.player.is_paused());
+                        let label = utils::time_str(progress, duration, self.player.is_paused());
                         let mut ratio = progress as f64 / duration as f64;
                         // Ugly fix. On some execution branches duration gets updated before progress is reset??
                         if ratio > 1.0 {
@@ -168,7 +170,7 @@ impl PlayerWidget {
         let mut data = self.data.blocking_lock();
         if self.player.is_paused() { 
             self.player.resume(); 
-            set_timer(&self.player, &self.runtime, &mut data, self.sender.clone()); 
+            set_timer(&self.player, &self.runtime, &mut data, self.sender.clone(), 1); 
         }
         else {
             stop_timer(&mut data);
@@ -189,7 +191,7 @@ impl PlayerWidget {
         let mut guard = self.data.blocking_lock();
         if self.player.is_playing() {
             self.player.seek_percentage(pcent);
-            set_timer(&self.player, &self.runtime, &mut guard, self.sender.clone());
+            set_timer(&self.player, &self.runtime, &mut guard, self.sender.clone(), 1);
         }
     }
 
@@ -198,7 +200,8 @@ impl PlayerWidget {
         let mut guard = self.data.blocking_lock();
         if self.player.is_playing() {
             self.player.forward(seconds);
-            set_timer(&self.player, &self.runtime, &mut guard, self.sender.clone());
+                // Do not set timer if forward ended the song.
+                set_timer(&self.player, &self.runtime, &mut guard, self.sender.clone(), 0);
         }       
     }
 
@@ -207,20 +210,22 @@ impl PlayerWidget {
         let mut guard = self.data.blocking_lock();
         if self.player.is_playing() {
             self.player.rewind(seconds);
-            set_timer(&self.player, &self.runtime, &mut guard, self.sender.clone());
+            set_timer(&self.player, &self.runtime, &mut guard, self.sender.clone(), 1);
         }
     }
 }
 
-fn set_timer(player: &Arc<Player>, runtime: &runtime::Runtime, data: &mut MutexGuard<PlayerData>, sender: mpsc::Sender<utils::Message>) {
+fn set_timer(player: &Arc<Player>, runtime: &runtime::Runtime, data: &mut MutexGuard<PlayerData>, sender: mpsc::Sender<utils::Message>, extra_seconds: u64) {
     
     stop_timer(data);
-    
-    let duration = player.get_duration();
-    let seconds = duration - player.get_progress().unwrap_or(duration) + 1;
-    //println!("{}, {:?}, {}", duration, player.get_progress(), seconds);
+    let seconds = player.get_duration()
+        .map(|duration| {
+            duration.saturating_sub(player.get_progress().unwrap())
+        })
+        .unwrap_or(0);
+
     data.end_timer.replace(runtime.spawn(async move {
-        sleep(Duration::from_secs(seconds + 1)).await;
+        sleep(Duration::from_secs(seconds + extra_seconds)).await;
         sender.send(utils::Message::SongFinished).await.expect("TODO: remove expect");
     }));   
 }

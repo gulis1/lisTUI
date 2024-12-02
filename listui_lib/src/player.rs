@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::{fs::File, time::Duration};
 use std::io::BufReader;
 use std::path::Path;
@@ -20,7 +20,7 @@ pub enum PlayerError {
 pub struct Player {
 
     sink: Sink,
-    current_track_duration: AtomicU64
+    current_track_duration: AtomicI64
 }
 
 impl Debug for Player {
@@ -38,24 +38,25 @@ impl Player {
         std::mem::forget(stream);
         Ok(Self {
             sink,
-            current_track_duration: AtomicU64::new(0)
+            current_track_duration: AtomicI64::new(0)
         })
     }
 
     pub fn play_file(&self, path: &Path) -> Result<(), PlayerError> {
         
-        self.stop();
         let file = BufReader::new(File::open(path)?);
         let source = Decoder::new(file)?;
-        self.current_track_duration.store(source.total_duration().unwrap().as_secs(), Ordering::SeqCst);
+        self.stop();
+        self.current_track_duration.store(source.total_duration().unwrap().as_secs() as i64, Ordering::SeqCst);
+
+        
         self.sink.append(source);
-   
         Ok(())
     }
 
     pub fn is_playing(&self) -> bool {
         // WARNING
-        !self.sink.empty()
+        self.current_track_duration.load(Ordering::Relaxed) >= 0
     }
 
     pub fn is_paused(&self) -> bool {
@@ -68,15 +69,22 @@ impl Player {
 
     pub fn seek_percentage(&self, percentage: u64) {
         
-        let time = percentage * self.get_duration() / 100;
-        self.sink.try_seek(Duration::from_secs(time)).expect("Failed to seek");
+        if let Some(duration) = self.get_duration() {
+            let time = percentage * duration / 100;
+            self.sink.try_seek(Duration::from_secs(time)).expect("Failed to seek");
+        }
+        
     }
 
     pub fn forward(&self, seconds: u64) {
         
         if let Some(progress) = self.get_progress() {
             let newpos = progress + seconds;
+            let duration = self.current_track_duration.load(Ordering::Relaxed);
             self.sink.try_seek(Duration::from_secs(newpos)).expect("Failed to seek");
+            if newpos + seconds >= duration as u64 {
+                self.stop();
+            }
         }
     }
 
@@ -103,16 +111,22 @@ impl Player {
 
     pub fn get_progress(&self) -> Option<u64> {
     
-        if self.sink.len() > 0 {
-            Some(self.sink.get_pos().as_secs())
+        if !self.is_playing() {
+            None
         }
         else {
-            None
+            Some(self.sink.get_pos().as_secs())
         }
     }
 
-    pub fn get_duration(&self) -> u64 {
-        self.current_track_duration.load(Ordering::SeqCst)
+    pub fn get_duration(&self) -> Option<u64> {
+
+        if !self.is_playing() {
+            None
+        }
+        else {
+            Some(self.current_track_duration.load(Ordering::SeqCst) as u64)
+        }
     }
 
     pub fn increase_volume(&self, volume_inc: i32) {
@@ -134,7 +148,7 @@ impl Player {
     }
 
     pub fn stop(&self) {
-        self.current_track_duration.store(0, Ordering::SeqCst);
+        self.current_track_duration.store(-1, Ordering::SeqCst);
         self.sink.stop();
     }
 }
